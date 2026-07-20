@@ -1,0 +1,99 @@
+import React, {useMemo} from 'react';
+import RecommendationIcon from './recommendation-icon';
+import {Button, type PaginationData, type ShowMoreData, Table, TableRow} from '@tryghost/admin-x-design-system';
+import {type IncomingRecommendation} from '@tryghost/admin-x-framework/api/recommendations';
+import {Inline} from '@tryghost/shade/primitives';
+import {NoValueLabel} from '@tryghost/shade/components';
+import {type ReferrerHistoryItem} from '@tryghost/admin-x-framework/api/referrers';
+import {formatNumber} from '@tryghost/shade/utils';
+import {useRouting} from '@tryghost/admin-x-framework/routing';
+
+interface IncomingRecommendationListProps {
+    incomingRecommendations: IncomingRecommendation[],
+    stats: ReferrerHistoryItem[],
+    pagination?: PaginationData,
+    showMore?: ShowMoreData,
+    isLoading: boolean
+}
+
+const IncomingRecommendationItem: React.FC<{incomingRecommendation: IncomingRecommendation, stats: ReferrerHistoryItem[]}> = ({incomingRecommendation, stats}) => {
+    const {updateRoute} = useRouting();
+
+    const signups = useMemo(() => {
+        // Note: this should match the `getDomainFromUrl` method from OutboundLinkTagger
+        let cleanedDomain = incomingRecommendation.url;
+        try {
+            cleanedDomain = new URL(incomingRecommendation.url).hostname.replace(/^www\./, '');
+        } catch {
+            // Ignore invalid urls
+        }
+
+        return stats.reduce((s, stat) => {
+            if (stat.source === cleanedDomain) {
+                return s + stat.signups;
+            }
+            return s;
+        }, 0);
+    }, [stats, incomingRecommendation.url]);
+
+    const recommendBack = () => {
+        updateRoute({route: `recommendations/add?url=${incomingRecommendation.url}`});
+    };
+
+    const showDetails = () => {
+        window.open(incomingRecommendation.url, '_blank');
+    };
+
+    const freeMembersLabel = signups === 1 ? 'free member' : 'free members';
+
+    return (
+        <TableRow action={
+            !incomingRecommendation.recommending_back && (
+                <div className="flex items-center justify-end">
+                    <Button color='green' label='Recommend back' size='sm' link onClick={recommendBack}
+                    />
+                </div>
+            )
+        } testId='incoming-recommendation-list-item' hideActions>
+            <Inline className='w-full' gap='none'>
+                <div className='grow py-3 pr-6' onClick={showDetails}>
+                    <Inline className='group hover:cursor-pointer' gap='md'>
+                        <RecommendationIcon favicon={incomingRecommendation.favicon} featured_image={incomingRecommendation.featured_image} title={incomingRecommendation.title || incomingRecommendation.url} />
+                        <span className='line-clamp-1 font-medium'>{incomingRecommendation.title || incomingRecommendation.url}</span>
+                    </Inline>
+                </div>
+                <div className='hidden py-3 pr-6 text-left whitespace-nowrap md:block' onClick={showDetails}>
+                    {(signups === 0) ? (
+                        <span className="text-muted-foreground">-</span>
+                    ) : (
+                        <div className='mr-2'>
+                            <span>{formatNumber(signups)}</span>
+                        </div>
+                    )}
+                </div>
+                <div className='hidden w-[1%] py-3 pr-6 whitespace-nowrap md:block' onClick={showDetails}>
+                    {(signups === 0) ? (null) : (
+                        <div className='-mt-px text-left'>
+                            <span className='-mb-px inline-block min-w-[60px] text-left whitespace-nowrap text-grey-700 lowercase'>{freeMembersLabel}</span>
+                        </div>
+                    )}
+                </div>
+                {incomingRecommendation.recommending_back && <div className='w-[1%] py-3 pr-6 whitespace-nowrap group-hover/table-row:visible md:invisible'><div className='mt-1 text-right whitespace-nowrap text-grey-700'>Recommending</div></div>}
+            </Inline>
+        </TableRow>
+    );
+};
+
+const IncomingRecommendationList: React.FC<IncomingRecommendationListProps> = ({incomingRecommendations, stats, pagination, showMore, isLoading}) => {
+    if (isLoading || incomingRecommendations.length) {
+        return <Table isLoading={isLoading} pagination={pagination} showMore={showMore} hintSeparator>
+            {incomingRecommendations.map(rec => <IncomingRecommendationItem key={rec.id} incomingRecommendation={rec} stats={stats} />)}
+        </Table>;
+    } else {
+        return <NoValueLabel>
+            <span className='max-w-[40ch] text-center'>No one&rsquo;s recommended you yet. Once they do, you&rsquo;ll find them here along with how many memberships they&rsquo;ve driven.</span>
+        </NoValueLabel>;
+    }
+};
+
+export default IncomingRecommendationList;

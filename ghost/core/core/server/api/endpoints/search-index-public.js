@@ -1,0 +1,65 @@
+const models = require('../../models');
+const urlService = require('../../services/url');
+const {requiredUrlColumns} = require('./utils/serializers/input/utils/url');
+const getPostServiceInstance = require('../../services/posts/posts-service-instance');
+const postsService = getPostServiceInstance();
+
+const urlRelationsWhenLazyRouting = () => {
+    const withRelated = urlService.facade.getRequiredRelations();
+    return withRelated.length ? {withRelated} : {};
+};
+
+/** @type {import('@tryghost/api-framework').Controller} */
+const controller = {
+    docName: 'search_index',
+    fetchPosts: {
+        headers: {
+            cacheInvalidate: false
+        },
+        permissions: true,
+        query() {
+            const options = {
+                filter: 'type:post',
+                limit: '10000',
+                order: 'updated_at DESC',
+                columns: requiredUrlColumns('posts', ['id', 'slug', 'title', 'excerpt', 'url', 'updated_at', 'visibility']),
+                ...urlRelationsWhenLazyRouting()
+            };
+
+            return postsService.browsePosts(options);
+        }
+    },
+    fetchAuthors: {
+        headers: {
+            cacheInvalidate: false
+        },
+        permissions: true,
+        query() {
+            const options = {
+                limit: '10000',
+                order: 'updated_at DESC',
+                columns: requiredUrlColumns('authors', ['id', 'slug', 'name', 'url', 'profile_image'])
+            };
+
+            return models.Author.findPage(options);
+        }
+    },
+    fetchTags: {
+        headers: {
+            cacheInvalidate: false
+        },
+        permissions: true,
+        query() {
+            const options = {
+                limit: '10000',
+                order: 'updated_at DESC',
+                columns: requiredUrlColumns('tags', ['id', 'slug', 'name', 'url']),
+                filter: 'visibility:public'
+            };
+
+            return models.Tag.findPage(options);
+        }
+    }
+};
+
+module.exports = controller;

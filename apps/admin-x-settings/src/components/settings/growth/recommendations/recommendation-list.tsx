@@ -1,0 +1,127 @@
+import EditRecommendationModal from './edit-recommendation-modal';
+import NiceModal from '@ebay/nice-modal-react';
+import React, {useState} from 'react';
+import RecommendationIcon from './recommendation-icon';
+import useSettingGroup from '../../../../hooks/use-setting-group';
+import {Button, Link, type PaginationData, type ShowMoreData, Table, TableRow} from '@tryghost/admin-x-design-system';
+import {Inline} from '@tryghost/shade/primitives';
+import {NoValueLabel, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@tryghost/shade/components';
+import {type Recommendation} from '@tryghost/admin-x-framework/api/recommendations';
+import {formatNumber} from '@tryghost/shade/utils';
+import {useRouting} from '@tryghost/admin-x-framework/routing';
+
+interface RecommendationListProps {
+    recommendations: Recommendation[],
+    pagination?: PaginationData,
+    showMore?: ShowMoreData,
+    isLoading: boolean
+}
+
+const RecommendationItem: React.FC<{recommendation: Recommendation}> = ({recommendation}) => {
+    const {route} = useRouting();
+
+    // Navigate to the edit page, without changing the route
+    // This helps to avoid fetching the recommendation
+    const showDetails = () => {
+        NiceModal.show(EditRecommendationModal, {
+            pathName: route,
+            animate: false,
+            recommendation: recommendation
+        });
+    };
+
+    const isGhostSite = recommendation.one_click_subscribe;
+    const showSubscribers = isGhostSite && !!recommendation.count?.subscribers;
+    const count = (showSubscribers ? recommendation.count?.subscribers : recommendation.count?.clicks) || 0;
+    const newMembers = count === 1 ? 'signup' : 'signups';
+    const clicks = count === 1 ? 'click' : 'clicks';
+
+    return (
+        <TableRow className='group hover:cursor-pointer' testId='recommendation-list-item' onClick={showDetails}>
+            <Inline className='w-full' gap='none'>
+                <div className='grow py-3 pr-6'>
+                    <Inline gap='md'>
+                        <RecommendationIcon isGhostSite={isGhostSite} {...recommendation} />
+                        <span className='line-clamp-1 font-medium'>{recommendation.title}</span>
+                    </Inline>
+                </div>
+                <div className='hidden py-3 pr-6 text-left whitespace-nowrap md:block'>
+                    {count === 0 ? (
+                        <span className="text-muted-foreground">-</span>
+                    ) : (
+                        <div className='flex items-center'>
+                            <div className='mr-2'>
+                                <span>{formatNumber(count)}</span>
+                            </div>
+                            <div className='text-grey-700 lowercase'>
+                                <span>{showSubscribers ? newMembers : clicks}</span>
+                                <span className='invisible group-hover:visible'> from you</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </Inline>
+        </TableRow>
+    );
+};
+
+const RecommendationList: React.FC<RecommendationListProps> = ({recommendations, pagination, showMore, isLoading}) => {
+    const {
+        siteData
+    } = useSettingGroup();
+    const recommendationsURL = `${siteData?.url.replace(/\/$/, '')}/#/portal/recommendations`;
+
+    const {updateRoute} = useRouting();
+    const openAddNewRecommendationModal = () => {
+        updateRoute('recommendations/add');
+    };
+
+    const [copied, setCopied] = useState(false);
+
+    const copyRecommendationsUrl = () => {
+        navigator.clipboard.writeText(recommendationsURL);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    if (isLoading || recommendations.length) {
+        return <Table
+            hint={
+                <span>
+                    Shared with new members after signup, or anytime using <Link href={recommendationsURL} target='_blank'>this link</Link>
+                    <TooltipProvider delayDuration={0}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    className='ml-1 align-middle leading-none'
+                                    color='clear'
+                                    hideLabel={true}
+                                    icon={copied ? 'check-circle' : 'duplicate'}
+                                    iconColorClass={copied ? 'text-green w-[14px] h-[14px]' : 'text-grey-600 hover:opacity-80 w-[14px] h-[14px]'}
+                                    label={copied ? 'Copied' : 'Copy'}
+                                    unstyled={true}
+                                    onClick={copyRecommendationsUrl}
+                                />
+                            </TooltipTrigger>
+                            <TooltipContent>{copied ? 'Copied' : 'Copy link'}</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </span>
+            }
+            isLoading={isLoading}
+            pagination={pagination}
+            showMore={showMore}
+            hintSeparator>
+            {recommendations && recommendations.map(recommendation => <RecommendationItem key={recommendation.id} recommendation={recommendation} />)}
+        </Table>;
+    } else {
+        return <NoValueLabel>
+            <Button color='grey' label='Add first recommendation' size='sm' onClick={() => {
+                openAddNewRecommendationModal();
+            }}></Button>
+            <span className='mt-2 max-w-[40ch] text-center text-sm'>Need inspiration? <Link href="https://ghost.org/explore" target='_blank'>Explore thousands of sites</Link></span>
+        </NoValueLabel>;
+    }
+};
+
+export default RecommendationList;
