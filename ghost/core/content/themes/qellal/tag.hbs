@@ -1,0 +1,31 @@
+{{!< default}}
+
+{{!-- Tender listing for a tag (e.g. /tag/2merkato/ = all tenders, or a
+      category tag). The posts loop and {{pagination}} live at the root
+      (paginated) context; {{#tag}} is used only for the header. --}}
+
+<section class="tender-list" style="max-width:42rem">
+    <div class="tender-list-head">
+        <div>
+            {{#tag}}
+            <h2>{{name}}</h2>
+            <p style="margin:.25rem 0 0;font-size:.875rem;color:var(--muted)">
+                {{plural ../pagination.total empty='No tenders' singular='% tender' plural='% tenders'}}{{#if description}} · {{description}}{{/if}}
+            </p>
+            {{/tag}}
+        </div>
+        <a class="link-more" href="{{@site.url}}">Home</a>
+    </div>
+
+    {{#if posts}}
+    <ul class="tender-cards">
+        {{#foreach posts}}
+            <li>{{> tender-card}}</li>
+        {{/foreach}}
+    </ul>
+    {{else}}
+    <p style="color:var(--muted)">No tenders here yet.</p>
+    {{/if}}
+</section>
+
+{{pagination}}

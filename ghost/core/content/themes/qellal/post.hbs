@@ -1,0 +1,55 @@
+{{!< default}}
+
+{{#post}}
+<main class="detail" data-tender-detail data-excerpt="{{excerpt}}">
+    <nav class="breadcrumb no-print" aria-label="Breadcrumb">
+        <a href="{{@site.url}}">Home</a> <span aria-hidden="true">/</span>
+        <a href="{{@site.url}}/tenders/">Tenders</a>
+    </nav>
+
+    <div class="detail-grid">
+        <div class="detail-main">
+            {{#if tags}}
+            <div class="detail-chips">
+                {{#foreach tags}}<a class="chip" data-tag="{{slug}}" href="{{url}}">{{name}}</a>{{/foreach}}
+            </div>
+            {{/if}}
+
+            <h1>{{title}}</h1>
+
+            <section class="card-section">
+                <h2>Description</h2>
+                <div class="card-body">
+                    <div class="gh-content" data-tender-content>
+                        {{content}}
+                    </div>
+                </div>
+            </section>
+
+            {{#if canonical_url}}
+            <section class="source-card">
+                <h2>Source</h2>
+                <div class="source-card-row">
+                    <div>
+                        <p class="em" style="font-weight:600;color:var(--ink)">2merkato</p>
+                        <p style="margin:.25rem 0 0;font-size:.75rem;color:var(--muted)">Always verify against the original notice before bidding.</p>
+                    </div>
+                    <a class="btn btn-secondary btn-sm" href="{{canonical_url}}" target="_blank" rel="noopener noreferrer">View original ↗</a>
+                </div>
+            </section>
+            {{/if}}
+
+            <a class="back-link no-print" href="{{@site.url}}/tenders/">← Back to all tenders</a>
+        </div>
+
+        <aside class="detail-aside">
+            <div class="deadline-card" data-deadline-card>
+                <p class="deadline-kicker" data-deadline-kicker>Deadline</p>
+                <div class="deadline-count is-closed" data-deadline-count>—</div>
+                <p class="deadline-sub" data-deadline-sub>Published {{date format="D MMM YYYY"}}</p>
+                <dl class="deadline-facts" data-deadline-facts hidden></dl>
+            </div>
+        </aside>
+    </div>
+</main>
+{{/post}}

@@ -1,0 +1,52 @@
+name: Scrape tenders to Ghost
+
+# Scrapes currently-open 2merkato tenders and publishes new ones as Ghost posts
+# (tags = categories + region + language + source). Auto-stops at the end of the
+# open set. Runs every 6h; manual runs default to a dry run so you can preview.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Source to scrape"
+        default: "2merkato"
+      pages:
+        description: "Listing pages to crawl this run"
+        default: "500"
+      start_page:
+        description: "Resume deep backfill from this list page"
+        default: "1"
+      dry_run:
+        description: "Dry run (1 = extract only, do not publish)"
+        default: "1"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 330
+    defaults:
+      run:
+        working-directory: tender-scraper
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+      - name: Run scraper
+        env:
+          GHOST_ADMIN_API_URL: ${{ secrets.GHOST_ADMIN_API_URL }}
+          GHOST_ADMIN_API_KEY: ${{ secrets.GHOST_ADMIN_API_KEY }}
+          MERKATO_USERNAME: ${{ secrets.MERKATO_USERNAME }}
+          MERKATO_PASSWORD: ${{ secrets.MERKATO_PASSWORD }}
+          START_PAGE: ${{ github.event.inputs.start_page || '1' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
+          # Pass user inputs through env (NOT interpolated into the shell) so a
+          # crafted source/pages value can't inject shell into a job holding the
+          # admin key.
+          SOURCE: ${{ github.event.inputs.source || '2merkato' }}
+          PAGES: ${{ github.event.inputs.pages || '500' }}
+        run: npm run scrape -- "$SOURCE" "$PAGES"

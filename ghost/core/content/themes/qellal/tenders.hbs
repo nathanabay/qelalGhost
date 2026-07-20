@@ -1,0 +1,28 @@
+{{!< default}}
+
+{{!-- The /tenders/ channel (routes.yaml → filter tag:2merkato). A paginated
+      list of every tender; posts + {{pagination}} are at the root context. --}}
+
+<section class="tender-list" style="max-width:42rem">
+    <div class="tender-list-head">
+        <div>
+            <h2>Tenders</h2>
+            <p style="margin:.25rem 0 0;font-size:.875rem;color:var(--muted)">
+                {{plural pagination.total empty='No tenders' singular='% open tender' plural='% tenders'}} · updated daily
+            </p>
+        </div>
+        <a class="link-more" href="{{@site.url}}">Home</a>
+    </div>
+
+    {{#if posts}}
+    <ul class="tender-cards">
+        {{#foreach posts}}
+            <li>{{> tender-card}}</li>
+        {{/foreach}}
+    </ul>
+    {{else}}
+    <p style="color:var(--muted)">No tenders here yet.</p>
+    {{/if}}
+</section>
+
+{{pagination}}

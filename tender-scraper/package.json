@@ -1,0 +1,21 @@
+{
+  "name": "ghost-tender-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone 2merkato tender scraper that publishes tenders as Ghost posts via the Admin API. Modeled on the Qellal (Supabase) scraper but Ghost-native — no Supabase, no Meilisearch.",
+  "scripts": {
+    "scrape": "tsx src/main.ts",
+    "schedule": "tsx src/schedule.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "crawlee": "^3.11.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}

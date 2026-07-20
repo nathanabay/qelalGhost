@@ -1,0 +1,17 @@
+{{!-- One tender rendered as a card. The deadline badge is filled client-side
+      from data-excerpt ("Deadline YYYY-MM-DD · …"), so it works on every
+      imported tender without a structured field. --}}
+<a class="tender-card" href="{{url}}" data-tender data-excerpt="{{excerpt}}">
+    <div class="tender-card-top">
+        <h2 class="tender-card-title">{{title}}</h2>
+        <span class="badge is-closed" data-deadline-badge hidden>—</span>
+    </div>
+    {{#if excerpt}}<p class="tender-card-meta">{{excerpt}}</p>{{/if}}
+    <div class="tender-card-foot">
+        <span>
+            {{#primary_tag}}<span class="chip">{{name}}</span> {{/primary_tag}}
+            Published <span class="em">{{date format="D MMM YYYY"}}</span>
+        </span>
+        <span>Source: 2merkato</span>
+    </div>
+</a>

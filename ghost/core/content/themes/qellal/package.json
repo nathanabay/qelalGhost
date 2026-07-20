@@ -1,0 +1,25 @@
+{
+  "name": "qellal",
+  "description": "Qellal — Ethiopian tender alerts. A Ghost theme in the Signal design language: ink & paper, deadline-forward, tender listings as posts.",
+  "version": "1.0.0",
+  "engines": {
+    "ghost": ">=5.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "ghost-theme"
+  ],
+  "author": {
+    "name": "Qellal",
+    "email": "hello@qellal.example"
+  },
+  "config": {
+    "posts_per_page": 12,
+    "image_sizes": {
+      "s": { "width": 400 },
+      "m": { "width": 800 },
+      "l": { "width": 1200 }
+    },
+    "card_assets": true
+  }
+}

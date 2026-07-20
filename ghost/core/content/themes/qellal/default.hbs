@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="{{@site.locale}}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="HandheldFriendly" content="True">
+    <meta name="theme-color" content="#17140D">
+
+    <title>{{meta_title}}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" type="text/css" href="{{asset "built/screen.css"}}">
+
+    {{ghost_head}}
+</head>
+<body class="{{body_class}}">
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header no-print">
+        <div class="wrap site-header-inner">
+            <a class="brand" href="{{@site.url}}">
+                <span class="brand-mark" aria-hidden="true"></span>
+                <span class="brand-name">{{@site.title}}</span>
+            </a>
+            <nav class="site-nav" aria-label="Main">
+                {{navigation}}
+                <a class="btn btn-primary btn-sm" href="#/portal/signin" data-portal="signin">Sign in</a>
+            </nav>
+        </div>
+    </header>
+
+    <div id="main" class="site-main">
+        {{{body}}}
+    </div>
+
+    <footer class="site-footer no-print">
+        <div class="wrap">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <div class="brand brand--dark">
+                        <span class="brand-mark brand-mark--dark" aria-hidden="true"></span>
+                        <span class="brand-name">{{@site.title}}</span>
+                    </div>
+                    <p class="footer-blurb">{{#if @site.description}}{{@site.description}}{{else}}Every Ethiopian tender notice in one place, with email &amp; Telegram alerts so you never miss a deadline.{{/if}}</p>
+                </div>
+                <div class="footer-col">
+                    <h2 class="footer-heading">Product</h2>
+                    <ul>
+                        <li><a href="{{@site.url}}">Browse tenders</a></li>
+                        <li><a href="#/portal/signup" data-portal="signup">Create free account</a></li>
+                        <li><a href="#/portal/signin" data-portal="signin">Sign in</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h2 class="footer-heading">Sources</h2>
+                    <p class="footer-blurb">Aggregated from public Ethiopian tender notices. Every listing links to its original source.</p>
+                </div>
+            </div>
+            <div class="footer-base">
+                <span>&copy; {{date format="YYYY"}} {{@site.title}} &middot; Ethiopian tender alerts</span>
+                <span>Built for procurement teams who never miss a deadline.</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{asset "js/tender.js"}}"></script>
+    {{ghost_foot}}
+</body>
+</html>

@@ -1,0 +1,255 @@
+// Ghost sink — turns a scraped tender into a Ghost post via the Admin API.
+//
+// Every 2merkato field is preserved: the human-readable description stays as the
+// post body, and a "Tender details" facts block captures deadline / region /
+// publishing entity / bid bond / document price / dates + a legal attribution
+// link, so nothing is lost.
+//
+// Tags per post = its 2merkato categories + region + language + source. Ghost
+// finds-or-creates tags by name, so the tag vocabulary is seeded automatically
+// as posts are published — there is no separate taxonomy to sync.
+//
+// Auth is a hand-rolled Admin API JWT (HS256, kid = key id, secret = hex) so the
+// package needs no extra dependency.
+
+import crypto from "node:crypto";
+import type { TenderInput } from "./types";
+
+export type GhostPost = {
+  title: string;
+  slug: string;
+  html: string;
+  status: "published" | "draft";
+  custom_excerpt?: string;
+  canonical_url?: string;
+  published_at?: string;
+  tags: { name: string }[];
+  authors?: { id: string }[];
+};
+
+const TITLE_MAX = 255;
+const EXCERPT_MAX = 300;
+const TAG_MAX = 191;
+
+// Ethiopic Unicode block → Amharic, otherwise English. Best-effort: 2merkato has
+// no language field, so we detect from the tender's own text.
+export function detectLanguage(t: TenderInput): "Amharic" | "English" {
+  const text = `${t.title ?? ""} ${t.description ?? ""}`;
+  return /[ሀ-፿]/.test(text) ? "Amharic" : "English";
+}
+
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// A stable, idempotent slug from the 2merkato notice id in the source_url, so
+// re-running the scraper never creates duplicates. Falls back to a hash of the
+// url when it doesn't carry a recognizable notice id.
+export function tenderSlug(t: Pick<TenderInput, "source_url">): string {
+  const m = t.source_url?.match(/([a-f0-9]{16,})\/?$/i);
+  const id = m ? m[1] : crypto.createHash("sha1").update(t.source_url).digest("hex").slice(0, 24);
+  return `tender-${id}`.slice(0, 185);
+}
+
+// Tags = categories (primary first) + region + language + source. Deduped,
+// trimmed, capped at Ghost's 191-char tag-name limit.
+export function tenderTags(t: TenderInput): { name: string }[] {
+  const names: string[] = [];
+  for (const c of t.categories) if (c?.name) names.push(c.name);
+  if (t.region) names.push(t.region);
+  names.push(detectLanguage(t));
+  if (t.source_name) names.push(t.source_name);
+
+  const seen = new Set<string>();
+  const tags: { name: string }[] = [];
+  for (const raw of names) {
+    const name = raw.trim().slice(0, TAG_MAX);
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    tags.push({ name });
+  }
+  return tags;
+}
+
+// The post body: original description (already sanitized HTML) + a facts block
+// that preserves every remaining structured field + a legal attribution link.
+export function tenderHtml(t: TenderInput): string {
+  const rows: [string, string | null][] = [
+    ["Deadline", t.deadline],
+    ["Region", t.region],
+    ["Publishing entity", t.publishing_entity],
+    ["Bid bond", t.bid_bond],
+    ["Bid document price", t.bid_document_price],
+    ["Published", t.published_on ?? t.published_date],
+    ["Posted at", t.posted_at],
+  ];
+  const facts = rows
+    .filter(([, v]) => v != null && String(v).trim() !== "")
+    .map(([k, v]) => `<li><strong>${esc(k)}:</strong> ${esc(String(v))}</li>`)
+    .join("");
+
+  const body = (t.description ?? "").trim();
+
+  // No inline attribution link here: the source_url is preserved as the post's
+  // canonical_url, and the theme renders a dedicated "Source" card from it.
+  return [body, facts ? `<hr><h3>Tender details</h3><ul>${facts}</ul>` : ""]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function tenderExcerpt(t: TenderInput): string | undefined {
+  const parts = [t.deadline ? `Deadline ${t.deadline}` : null, t.publishing_entity, t.region].filter(
+    Boolean,
+  );
+  if (parts.length === 0) return undefined;
+  return parts.join(" · ").slice(0, EXCERPT_MAX);
+}
+
+// Pure mapping: TenderInput → Ghost post payload.
+export function tenderToPost(t: TenderInput, authorId?: string): GhostPost {
+  const post: GhostPost = {
+    title: (t.title ?? "Untitled tender").trim().slice(0, TITLE_MAX),
+    slug: tenderSlug(t),
+    html: tenderHtml(t),
+    status: "published",
+    tags: tenderTags(t),
+  };
+  const excerpt = tenderExcerpt(t);
+  if (excerpt) post.custom_excerpt = excerpt;
+  if (t.source_url) post.canonical_url = t.source_url;
+  const publishedAt = t.posted_at ?? (t.published_date ? `${t.published_date}T00:00:00Z` : null);
+  if (publishedAt) post.published_at = new Date(publishedAt).toISOString();
+  if (authorId) post.authors = [{ id: authorId }];
+  return post;
+}
+
+// ── Admin API client ────────────────────────────────────────────────────────
+
+function b64url(input: string | Buffer): string {
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
+export class GhostAdminClient {
+  private url: string;
+  private keyId: string;
+  private secret: string;
+  readonly version: string;
+
+  constructor(opts?: { url?: string; key?: string; version?: string }) {
+    const url = opts?.url ?? process.env.GHOST_ADMIN_API_URL;
+    const key = opts?.key ?? process.env.GHOST_ADMIN_API_KEY;
+    if (!url || !key) {
+      throw new Error("GHOST_ADMIN_API_URL and GHOST_ADMIN_API_KEY must be set");
+    }
+    const [id, secret] = key.split(":");
+    if (!id || !secret) {
+      throw new Error("GHOST_ADMIN_API_KEY must be in '<id>:<hex-secret>' form");
+    }
+    this.url = url.replace(/\/+$/, "");
+    this.keyId = id;
+    this.secret = secret;
+    this.version = opts?.version ?? "v5.0";
+  }
+
+  private token(): string {
+    const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT", kid: this.keyId }));
+    const iat = Math.floor(Date.now() / 1000);
+    const payload = b64url(JSON.stringify({ iat, exp: iat + 300, aud: "/admin/" }));
+    const data = `${header}.${payload}`;
+    const sig = b64url(
+      crypto.createHmac("sha256", Buffer.from(this.secret, "hex")).update(data).digest(),
+    );
+    return `${data}.${sig}`;
+  }
+
+  private async req(path: string, init: RequestInit = {}): Promise<Response> {
+    return fetch(`${this.url}/ghost/api/admin${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Ghost ${this.token()}`,
+        "Accept-Version": this.version,
+        "Content-Type": "application/json",
+        ...(init.headers ?? {}),
+      },
+    });
+  }
+
+  // The owner/first staff user, to author published posts.
+  async getDefaultAuthorId(): Promise<string | undefined> {
+    const r = await this.req("/users/?limit=1&order=created_at%20asc&fields=id");
+    if (!r.ok) return undefined;
+    const body = (await r.json()) as { users?: { id: string }[] };
+    return body.users?.[0]?.id;
+  }
+
+  // Every source_url already imported (stored as canonical_url on tender-* posts),
+  // so the crawler can skip notices it has already published.
+  async getExistingCanonicalUrls(): Promise<Set<string>> {
+    const urls = new Set<string>();
+    let page = 1;
+    for (;;) {
+      const r = await this.req(
+        `/posts/?limit=100&page=${page}&fields=canonical_url&filter=${encodeURIComponent("slug:~'tender-'")}`,
+      );
+      if (!r.ok) throw new Error(`list posts failed: ${r.status} ${await r.text()}`);
+      const body = (await r.json()) as {
+        posts: { canonical_url: string | null }[];
+        meta: { pagination: { pages: number } };
+      };
+      for (const p of body.posts) if (p.canonical_url) urls.add(p.canonical_url);
+      if (page >= (body.meta?.pagination?.pages ?? page)) break;
+      page += 1;
+    }
+    return urls;
+  }
+
+  // Create one post from HTML. Returns the new post's id/url or throws.
+  async createPost(post: GhostPost): Promise<{ id: string; url: string }> {
+    const r = await this.req("/posts/?source=html", {
+      method: "POST",
+      body: JSON.stringify({ posts: [post] }),
+    });
+    if (!r.ok) throw new Error(`create post failed (${r.status}): ${await r.text()}`);
+    const body = (await r.json()) as { posts: { id: string; url: string }[] };
+    return { id: body.posts[0].id, url: body.posts[0].url };
+  }
+}
+
+// Batch sink used by the crawler's onBatch. Dedupes against `existing` (a slug
+// set the caller preloads once and this mutates), and treats a duplicate-slug
+// create as a skip so re-runs are idempotent.
+export async function saveTendersToGhost(
+  rows: TenderInput[],
+  client: GhostAdminClient,
+  existing: Set<string>,
+  authorId?: string,
+): Promise<{ inserted: number; skipped: number }> {
+  let inserted = 0;
+  let skipped = 0;
+  for (const t of rows) {
+    const slug = tenderSlug(t);
+    if (existing.has(slug)) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await client.createPost(tenderToPost(t, authorId));
+      existing.add(slug);
+      inserted += 1;
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (/already exists|duplicate|slug/i.test(msg)) {
+        existing.add(slug);
+        skipped += 1;
+      } else {
+        throw err;
+      }
+    }
+  }
+  return { inserted, skipped };
+}

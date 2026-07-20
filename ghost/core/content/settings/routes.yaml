@@ -1,0 +1,16 @@
+routes:
+  # /tenders/ lists every 2merkato tender (a paginated channel). Individual
+  # tender permalinks stay at /{slug}/ — this route only adds the listing URL.
+  /tenders/:
+    controller: channel
+    filter: tag:2merkato
+    template: tenders
+
+collections:
+  /:
+    permalink: /{slug}/
+    template: index
+
+taxonomies:
+  tag: /tag/{slug}/
+  author: /author/{slug}/

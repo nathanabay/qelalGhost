@@ -1,0 +1,30 @@
+{{!< default}}
+
+{{!-- Author archive: the tenders published by this author, as a card list.
+      Posts loop + {{pagination}} live at the root (paginated) context. --}}
+
+<section class="tender-list" style="max-width:42rem">
+    <div class="tender-list-head">
+        <div>
+            {{#author}}
+            <h2>{{name}}</h2>
+            <p style="margin:.25rem 0 0;font-size:.875rem;color:var(--muted)">
+                {{plural ../pagination.total empty='No tenders' singular='% tender' plural='% tenders'}} published
+            </p>
+            {{/author}}
+        </div>
+        <a class="link-more" href="{{@site.url}}">Home</a>
+    </div>
+
+    {{#if posts}}
+    <ul class="tender-cards">
+        {{#foreach posts}}
+            <li>{{> tender-card}}</li>
+        {{/foreach}}
+    </ul>
+    {{else}}
+    <p style="color:var(--muted)">No tenders here yet.</p>
+    {{/if}}
+</section>
+
+{{pagination}}

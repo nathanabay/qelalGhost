@@ -87,16 +87,7 @@ typings/
 
 /ghost/core/test-results/
 /ghost/core/core/server/data/export/exported*
-/ghost/core/content/tmp/*
-/ghost/core/content/data/*
-/ghost/core/content/logs/*
-/ghost/core/content/settings/*
-/ghost/core/content/apps/**/*
-/ghost/core/content/themes/**/*
-/ghost/core/content/images/**/*
-/ghost/core/content/media/**/*
-/ghost/core/content/files/**/*
-/ghost/core/content/public/*
+
 # Boot-generated public assets (admin-auth, .well-known) when tests use the
 # fixtures dir as the content path — same as content/public above (PLA-152).
 /ghost/core/test/utils/fixtures/public/
@@ -223,3 +214,4 @@ yalc.lock
 .github/instructions/nx.instructions.md
 
 .nx/migrate-runs
+test

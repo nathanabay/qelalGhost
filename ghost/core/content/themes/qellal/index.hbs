@@ -1,0 +1,112 @@
+{{!< default}}
+
+{{!-- The Qellal landing page: hero, stat strip, how-it-works, latest tenders,
+      features, and a closing CTA band. Tender listings live under the "2merkato"
+      tag; the header "Browse" links to the full paginated archive. --}}
+
+<main>
+    <section class="hero">
+        <span class="eyebrow"><span class="dot" aria-hidden="true"></span> Ethiopian tender intelligence</span>
+        <h1>Never miss a tender deadline again</h1>
+        <p class="lede">{{@site.title}} gathers every Ethiopian tender notice into one feed and alerts you by email &amp; Telegram — a week before the deadline, so your bid is never late.</p>
+        <div class="hero-cta">
+            <a class="btn btn-primary" href="{{@site.url}}/tenders/">Browse tenders</a>
+            <a class="btn btn-secondary" href="#/portal/signup" data-portal="signup">Create free account</a>
+        </div>
+        <p class="fineprint">Free · No account needed to browse · Sources always attributed</p>
+    </section>
+
+    <section class="statstrip">
+        <div class="statstrip-grid">
+            <div class="stat">
+                <div class="stat-value">{{#get "posts" filter="tag:2merkato" limit="1"}}{{pagination.total}}{{else}}—{{/get}}</div>
+                <div class="stat-label">Live tenders</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{#get "tags" filter="visibility:public" limit="1"}}{{pagination.total}}{{else}}—{{/get}}</div>
+                <div class="stat-label">Categories &amp; tags</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">2</div>
+                <div class="stat-label">Alert channels</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">ETB 0</div>
+                <div class="stat-label">To get started</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2 class="section-title">How {{@site.title}} works</h2>
+        <p class="section-sub">From scattered portals to a single alert, in three steps.</p>
+        <div class="grid-3">
+            <div class="step-card">
+                <div class="step-ic">1</div>
+                <span class="step-num" aria-hidden="true">1</span>
+                <h3>Browse every tender</h3>
+                <p>One feed aggregated from official Ethiopian sources — no more checking ten portals a day.</p>
+            </div>
+            <div class="step-card">
+                <div class="step-ic">2</div>
+                <span class="step-num" aria-hidden="true">2</span>
+                <h3>Save your search</h3>
+                <p>Filter by category, region or keyword, then save it as a recurring alert in one tap.</p>
+            </div>
+            <div class="step-card">
+                <div class="step-ic">3</div>
+                <span class="step-num" aria-hidden="true">3</span>
+                <h3>Get alerted early</h3>
+                <p>Email &amp; Telegram reminders a week before the deadline — so your bid is never late.</p>
+            </div>
+        </div>
+    </section>
+
+    {{#get "posts" filter="tag:2merkato" limit="6" order="published_at desc"}}
+        {{#if posts}}
+        <section class="tender-list">
+            <div class="tender-list-head">
+                <h2>Latest tenders</h2>
+                <a class="link-more" href="{{@site.url}}/tenders/">View all →</a>
+            </div>
+            <ul class="tender-cards">
+                {{#foreach posts}}
+                    <li>{{> tender-card}}</li>
+                {{/foreach}}
+            </ul>
+        </section>
+        {{/if}}
+    {{/get}}
+
+    <section class="section">
+        <div class="grid-3">
+            <div class="feature-card">
+                <span class="check">✓</span>
+                <h3>Deadline-forward</h3>
+                <p>Every tender shows days-to-deadline, colour-coded by urgency — the number you care about, first.</p>
+            </div>
+            <div class="feature-card">
+                <span class="check">✓</span>
+                <h3>Source-attributed</h3>
+                <p>Each listing links to its official original notice, so you can always verify before you bid.</p>
+            </div>
+            <div class="feature-card">
+                <span class="check">✓</span>
+                <h3>Always current</h3>
+                <p>New notices are scraped and published continuously, so the feed reflects what's open right now.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta-band">
+        <div class="wrap">
+            <p class="cta-kicker">Live tenders · Updated daily</p>
+            <h2>Start tracking tenders in under a minute</h2>
+            <p>Create a free account, save your first alert, and let {{@site.title}} watch the deadlines for you.</p>
+            <div class="cta-actions">
+                <a class="btn btn-invert" href="#/portal/signup" data-portal="signup">Create free account</a>
+                <a class="btn btn-ghost-outline" href="{{@site.url}}/tenders/">Browse tenders</a>
+            </div>
+        </div>
+    </section>
+</main>

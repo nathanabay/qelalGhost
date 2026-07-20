@@ -1,0 +1,17 @@
+{{!< default}}
+
+{{#post}}
+<main class="detail">
+    <article class="detail-main" style="max-width:42rem;margin:0 auto">
+        {{#if @page.show_title_and_feature_image}}
+            <h1>{{title}}</h1>
+            {{#if feature_image}}
+                <img class="kg-image" src="{{img_url feature_image size="l"}}" alt="{{title}}" loading="lazy">
+            {{/if}}
+        {{/if}}
+        <div class="gh-content card-section">
+            {{content}}
+        </div>
+    </article>
+</main>
+{{/post}}
