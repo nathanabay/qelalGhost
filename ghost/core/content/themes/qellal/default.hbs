@@ -27,12 +27,12 @@
             </a>
             <nav class="site-nav" aria-label="Main">
                 {{navigation}}
-                <a class="btn btn-primary btn-sm" href="#/portal/signin" data-portal="signin">Sign in</a>
+                {{#if @site.members_enabled}}<a class="btn btn-primary btn-sm" href="#/portal/signin" data-portal="signin">Sign in</a>{{/if}}
             </nav>
         </div>
     </header>
 
-    <div id="main" class="site-main">
+    <div id="main" class="site-main" tabindex="-1">
         {{{body}}}
     </div>
 
@@ -50,8 +50,10 @@
                     <h2 class="footer-heading">Product</h2>
                     <ul>
                         <li><a href="{{@site.url}}">Browse tenders</a></li>
+                        {{#if @site.members_enabled}}
                         <li><a href="#/portal/signup" data-portal="signup">Create free account</a></li>
                         <li><a href="#/portal/signin" data-portal="signin">Sign in</a></li>
+                        {{/if}}
                     </ul>
                 </div>
                 <div class="footer-col">

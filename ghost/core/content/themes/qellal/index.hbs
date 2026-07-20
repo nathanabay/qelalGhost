@@ -11,7 +11,7 @@
         <p class="lede">{{@site.title}} gathers every Ethiopian tender notice into one feed and alerts you by email &amp; Telegram — a week before the deadline, so your bid is never late.</p>
         <div class="hero-cta">
             <a class="btn btn-primary" href="{{@site.url}}/tenders/">Browse tenders</a>
-            <a class="btn btn-secondary" href="#/portal/signup" data-portal="signup">Create free account</a>
+            {{#if @site.members_enabled}}<a class="btn btn-secondary" href="#/portal/signup" data-portal="signup">Create free account</a>{{/if}}
         </div>
         <p class="fineprint">Free · No account needed to browse · Sources always attributed</p>
     </section>
@@ -81,23 +81,24 @@
     <section class="section">
         <div class="grid-3">
             <div class="feature-card">
-                <span class="check">✓</span>
+                <span class="check" aria-hidden="true">✓</span>
                 <h3>Deadline-forward</h3>
                 <p>Every tender shows days-to-deadline, colour-coded by urgency — the number you care about, first.</p>
             </div>
             <div class="feature-card">
-                <span class="check">✓</span>
+                <span class="check" aria-hidden="true">✓</span>
                 <h3>Source-attributed</h3>
                 <p>Each listing links to its official original notice, so you can always verify before you bid.</p>
             </div>
             <div class="feature-card">
-                <span class="check">✓</span>
+                <span class="check" aria-hidden="true">✓</span>
                 <h3>Always current</h3>
                 <p>New notices are scraped and published continuously, so the feed reflects what's open right now.</p>
             </div>
         </div>
     </section>
 
+    {{#if @site.members_enabled}}
     <section class="cta-band">
         <div class="wrap">
             <p class="cta-kicker">Live tenders · Updated daily</p>
@@ -109,4 +110,5 @@
             </div>
         </div>
     </section>
+    {{/if}}
 </main>

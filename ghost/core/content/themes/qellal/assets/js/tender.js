@@ -12,7 +12,10 @@
   var DATE_RE = /(\d{4}-\d{2}-\d{2})/;
   var dateFmt;
   try {
-    dateFmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
+    // Format in UTC to match daysLeft(), which counts calendar days in UTC.
+    // Without this, a "2026-08-11" deadline renders as "10 Aug 2026" for a
+    // viewer west of UTC (midnight-UTC falls on the previous local day).
+    dateFmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
   } catch (e) {
     dateFmt = null;
   }
