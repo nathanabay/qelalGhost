@@ -12,6 +12,6 @@
             {{#primary_tag}}<span class="chip">{{name}}</span> {{/primary_tag}}
             Published <span class="em">{{date format="D MMM YYYY"}}</span>
         </span>
-        <span>Source: 2merkato</span>
+        <span>Source: {{#if @custom.source_name}}{{@custom.source_name}}{{else}}2merkato{{/if}}</span>
     </div>
 </a>

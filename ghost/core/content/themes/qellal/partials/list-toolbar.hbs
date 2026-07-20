@@ -1,0 +1,11 @@
+{{!-- Client-side list controls. Hidden until tender.js confirms the page has
+      deadline-bearing cards, so it never shows a dead control with JS off. --}}
+<div class="list-toolbar" data-list-toolbar hidden>
+    <div class="seg" role="group" aria-label="Sort tenders">
+        <button type="button" data-list-view="grouped" aria-pressed="true">Closing soon</button>
+        <button type="button" data-list-view="newest" aria-pressed="false">Newest</button>
+    </div>
+    <label class="toolbar-check">
+        <input type="checkbox" data-hide-closed> Hide closed
+    </label>
+</div>

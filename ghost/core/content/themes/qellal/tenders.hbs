@@ -1,9 +1,10 @@
 {{!< default}}
 
 {{!-- The /tenders/ channel (routes.yaml → filter tag:2merkato). A paginated
-      list of every tender; posts + {{pagination}} are at the root context. --}}
+      list of every tender; posts + {{pagination}} are at the root context.
+      The toolbar (sort / hide-closed) is enhanced client-side by tender.js. --}}
 
-<section class="tender-list" style="max-width:42rem">
+<section class="tender-list" data-tender-page>
     <div class="tender-list-head">
         <div>
             <h2>Tenders</h2>
@@ -14,8 +15,10 @@
         <a class="link-more" href="{{@site.url}}">Home</a>
     </div>
 
+    {{> list-toolbar}}
+
     {{#if posts}}
-    <ul class="tender-cards">
+    <ul class="tender-cards" data-tender-list>
         {{#foreach posts}}
             <li>{{> tender-card}}</li>
         {{/foreach}}
@@ -26,3 +29,5 @@
 </section>
 
 {{pagination}}
+
+{{> subscribe title="Never miss the next one" description="Get new tenders and deadline reminders by email — free."}}

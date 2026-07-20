@@ -3,21 +3,24 @@
 {{!-- Author archive: the tenders published by this author, as a card list.
       Posts loop + {{pagination}} live at the root (paginated) context. --}}
 
-<section class="tender-list" style="max-width:42rem">
+{{#author}}
+<header class="archive-hero">
+    {{#if profile_image}}<img class="archive-hero-img" src="{{img_url profile_image size="m"}}" alt="{{name}}" loading="lazy" style="height:6rem;width:6rem;border-radius:999px;object-fit:cover">{{/if}}
+    <h1>{{name}}</h1>
+    <p><span class="count">{{plural ../pagination.total empty='No tenders' singular='% tender' plural='% tenders'}}</span> published{{#if bio}} · {{bio}}{{/if}}</p>
+</header>
+{{/author}}
+
+<section class="tender-list" data-tender-page>
     <div class="tender-list-head">
-        <div>
-            {{#author}}
-            <h2>{{name}}</h2>
-            <p style="margin:.25rem 0 0;font-size:.875rem;color:var(--muted)">
-                {{plural ../pagination.total empty='No tenders' singular='% tender' plural='% tenders'}} published
-            </p>
-            {{/author}}
-        </div>
+        <div></div>
         <a class="link-more" href="{{@site.url}}">Home</a>
     </div>
 
+    {{> list-toolbar}}
+
     {{#if posts}}
-    <ul class="tender-cards">
+    <ul class="tender-cards" data-tender-list>
         {{#foreach posts}}
             <li>{{> tender-card}}</li>
         {{/foreach}}

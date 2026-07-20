@@ -1,0 +1,18 @@
+{{!-- Inline Ghost members signup. Ghost's members.js wires up [data-members-form];
+      a successful submit emails a sign-in link. This IS the "email alert" — new
+      tenders and deadlines arrive as the site's newsletter. --}}
+{{#if @site.members_enabled}}
+<section class="subscribe no-print" data-subscribe>
+    <div class="subscribe-inner">
+        <div>
+            <h2>{{#if title}}{{title}}{{else}}Get new tenders in your inbox{{/if}}</h2>
+            <p>{{#if description}}{{description}}{{else}}Subscribe and {{@site.title}} emails you new tenders and deadline reminders. Free, unsubscribe anytime.{{/if}}</p>
+        </div>
+        <form data-members-form="subscribe" class="subscribe-form">
+            <input data-members-email type="email" name="email" required autocomplete="email" placeholder="you@company.et" aria-label="Your email address">
+            <button class="btn btn-primary" type="submit">Subscribe</button>
+        </form>
+        <p class="subscribe-note" data-subscribe-note aria-live="polite"></p>
+    </div>
+</section>
+{{/if}}

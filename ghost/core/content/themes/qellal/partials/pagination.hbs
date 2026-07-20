@@ -1,0 +1,16 @@
+{{!-- Overrides the default {{pagination}} output with prev / page-of / next. --}}
+<nav class="pagination no-print" role="navigation" aria-label="Pagination">
+    {{#if prev}}
+        <a class="pg-link" href="{{page_url prev}}" rel="prev">← Newer</a>
+    {{else}}
+        <span class="pg-link pg-disabled" aria-hidden="true">← Newer</span>
+    {{/if}}
+
+    <span class="pg-status">Page {{page}} of {{pages}}</span>
+
+    {{#if next}}
+        <a class="pg-link" href="{{page_url next}}" rel="next">Older →</a>
+    {{else}}
+        <span class="pg-link pg-disabled" aria-hidden="true">Older →</span>
+    {{/if}}
+</nav>
