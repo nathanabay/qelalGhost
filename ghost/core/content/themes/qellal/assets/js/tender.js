@@ -1,11 +1,12 @@
-/* Qellal theme — deadline countdowns.
+/* Qellal theme — progressive enhancement.
  *
  * Ghost posts have no structured "deadline" field, so each imported tender
  * carries it in its excerpt ("Deadline YYYY-MM-DD · …") and in a "Tender
  * details" facts list in the body. This script reads that, computes days-left
- * (UTC, date-only — matching the source app), and renders the urgency badges on
- * cards and the big ink countdown on the detail page. Progressive enhancement:
- * without JS the facts still read fine inline. */
+ * (UTC, date-only), and drives: card/detail deadline badges, the list
+ * sort/group/hide-closed toolbar, add-to-calendar + share, the light/dark
+ * toggle, the mobile nav drawer, and subscribe-form feedback. Everything here
+ * is enhancement — the page reads fine with JS disabled. */
 (function () {
   "use strict";
 
@@ -27,6 +28,7 @@
   }
 
   function daysLeft(deadline) {
+    if (!deadline) return null;
     var now = new Date();
     var today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     var dl = new Date(deadline);
@@ -35,7 +37,6 @@
     return Math.round((due - today) / 86400000);
   }
 
-  // Pull a YYYY-MM-DD deadline from an excerpt string ("Deadline 2026-08-11 · …").
   function deadlineFrom(text) {
     if (!text) return null;
     var idx = text.indexOf("Deadline");
@@ -71,10 +72,135 @@
     }
   }
 
-  // ── Detail: big countdown + facts relocation ─────────────
+  // ── List: sort / group / hide-closed ─────────────────────
+  function makeBand(cls, text) {
+    var li = document.createElement("li");
+    li.className = "band" + (cls ? " " + cls : "");
+    var span = document.createElement("span");
+    span.className = "band-label";
+    var dot = document.createElement("span");
+    dot.className = "band-dot";
+    span.appendChild(dot);
+    span.appendChild(document.createTextNode(text));
+    li.appendChild(span);
+    return li;
+  }
+
+  function initList() {
+    var ul = document.querySelector("[data-tender-list]");
+    if (!ul) return;
+    var toolbar = document.querySelector("[data-list-toolbar]");
+
+    var lis = [].slice.call(ul.children).filter(function (li) {
+      return li.querySelector && li.querySelector(".tender-card");
+    });
+    var items = lis.map(function (li) {
+      var card = li.querySelector(".tender-card");
+      var titleEl = card.querySelector(".tender-card-title");
+      var text = ((titleEl ? titleEl.textContent : "") + " " + (card.getAttribute("data-excerpt") || "")).toLowerCase();
+      return {
+        li: li, card: card,
+        d: daysLeft(deadlineFrom(card.getAttribute("data-excerpt"))),
+        primary: card.getAttribute("data-primary") || "",
+        name: card.getAttribute("data-primary-name") || "",
+        text: text
+      };
+    });
+    var original = items.slice();
+    var withDeadline = items.filter(function (x) { return x.d !== null; });
+    // Not worth a toolbar if the page has no deadlines to sort by.
+    if (withDeadline.length < 2) return;
+    if (toolbar) toolbar.hidden = false;
+
+    // Filter-aware empty state, inserted after the list.
+    var emptyEl = document.createElement("p");
+    emptyEl.className = "list-empty";
+    emptyEl.setAttribute("role", "status");
+    emptyEl.textContent = "No tenders match these filters.";
+    emptyEl.hidden = true;
+    ul.parentNode.insertBefore(emptyEl, ul.nextSibling);
+
+    var state = { view: "grouped", hideClosed: false, cat: "", q: "" };
+    var groups = [
+      { cls: "b-urgent", label: "Closing this week", test: function (d) { return d !== null && d >= 0 && d <= 7; } },
+      { cls: "b-warn", label: "Closing this month", test: function (d) { return d !== null && d > 7 && d <= 30; } },
+      { cls: "b-open", label: "Later", test: function (d) { return d !== null && d > 30; } },
+      { cls: "", label: "No deadline", test: function (d) { return d === null; } },
+      { cls: "", label: "Closed", test: function (d) { return d !== null && d < 0; } }
+    ];
+
+    function visible(x) {
+      if (state.cat && x.primary !== state.cat) return false;
+      if (state.q && x.text.indexOf(state.q) < 0) return false;
+      if (state.hideClosed && x.d !== null && x.d < 0) return false;
+      return true;
+    }
+
+    function clearBands() {
+      var bands = ul.querySelectorAll(".band");
+      for (var i = 0; i < bands.length; i++) bands[i].parentNode.removeChild(bands[i]);
+    }
+
+    function apply() {
+      clearBands();
+      var anyVisible = false;
+      items.forEach(function (x) { var v = visible(x); x.card.classList.toggle("is-hidden", !v); if (v) anyVisible = true; });
+
+      if (state.view === "newest") {
+        original.forEach(function (x) { ul.appendChild(x.li); });
+      } else {
+        groups.forEach(function (g) {
+          var members = items.filter(function (x) { return g.test(x.d); });
+          if (!members.length) return;
+          if (members.some(visible)) ul.appendChild(makeBand(g.cls, g.label));
+          if (g.label !== "No deadline") members.sort(function (a, b) { return a.d - b.d; });
+          members.forEach(function (x) { ul.appendChild(x.li); });
+        });
+      }
+      emptyEl.hidden = anyVisible;
+    }
+
+    if (toolbar) {
+      var viewBtns = toolbar.querySelectorAll("[data-list-view]");
+      for (var i = 0; i < viewBtns.length; i++) {
+        viewBtns[i].addEventListener("click", function (e) {
+          state.view = e.currentTarget.getAttribute("data-list-view");
+          for (var j = 0; j < viewBtns.length; j++) {
+            viewBtns[j].setAttribute("aria-pressed", viewBtns[j] === e.currentTarget ? "true" : "false");
+          }
+          apply();
+        });
+      }
+      var chk = toolbar.querySelector("[data-hide-closed]");
+      if (chk) chk.addEventListener("change", function () { state.hideClosed = chk.checked; apply(); });
+
+      var textInput = toolbar.querySelector("[data-text-filter]");
+      if (textInput) textInput.addEventListener("input", function () { state.q = textInput.value.trim().toLowerCase(); apply(); });
+
+      // Populate the category filter from tags present on this page.
+      var catSel = toolbar.querySelector("[data-cat-filter]");
+      var catField = toolbar.querySelector("[data-cat-field]");
+      if (catSel && catField) {
+        var cats = {};
+        items.forEach(function (x) { if (x.primary) cats[x.primary] = x.name || x.primary; });
+        var keys = Object.keys(cats).sort(function (a, b) { return cats[a].localeCompare(cats[b]); });
+        if (keys.length >= 2) {
+          keys.forEach(function (k) {
+            var o = document.createElement("option");
+            o.value = k; o.textContent = cats[k];
+            catSel.appendChild(o);
+          });
+          catField.hidden = false;
+          catSel.addEventListener("change", function () { state.cat = catSel.value; apply(); });
+        }
+      }
+    }
+
+    apply();
+  }
+
+  // ── Detail: countdown + facts + calendar + share ─────────
   function extractFacts(content) {
-    // Find the "Tender details" <h3> and its following <ul>; return [{label,value}]
-    // and the nodes to remove so they don't duplicate below the countdown.
     var facts = [];
     var nodes = [];
     if (!content) return { facts: facts, nodes: nodes };
@@ -102,11 +228,9 @@
     return { facts: facts, nodes: nodes };
   }
 
-  // Remove the inline "View the original notice on …" attribution paragraph
-  // from the body — the detail page renders a dedicated Source card instead.
   function stripAttribution(content) {
     if (!content) return;
-    var links = content.querySelectorAll('a[href]');
+    var links = content.querySelectorAll("a[href]");
     for (var i = 0; i < links.length; i++) {
       if (/view the original notice/i.test(links[i].textContent || "")) {
         var p = links[i].closest ? links[i].closest("p") : null;
@@ -115,6 +239,68 @@
         return;
       }
     }
+  }
+
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function icsEscape(s) { return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n"); }
+  function slugify(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "tender"; }
+
+  function buildICS(title, deadline) {
+    var s = new Date(deadline);
+    var start = s.getUTCFullYear() + pad(s.getUTCMonth() + 1) + pad(s.getUTCDate());
+    var e = new Date(deadline);
+    e.setUTCDate(e.getUTCDate() + 1);
+    var end = e.getUTCFullYear() + pad(e.getUTCMonth() + 1) + pad(e.getUTCDate());
+    var now = new Date();
+    var stamp = now.getUTCFullYear() + pad(now.getUTCMonth() + 1) + pad(now.getUTCDate()) + "T" +
+      pad(now.getUTCHours()) + pad(now.getUTCMinutes()) + pad(now.getUTCSeconds()) + "Z";
+    var uid = "qellal-" + start + "-" + slugify(title) + "@" + (location.hostname || "qellal");
+    return [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Qellal//Tender//EN", "CALSCALE:GREGORIAN",
+      "BEGIN:VEVENT", "UID:" + uid, "DTSTAMP:" + stamp,
+      "DTSTART;VALUE=DATE:" + start, "DTEND;VALUE=DATE:" + end,
+      "SUMMARY:" + icsEscape("Tender deadline — " + title),
+      "DESCRIPTION:" + icsEscape("Deadline for: " + title + "\n" + location.href),
+      "URL:" + location.href, "END:VEVENT", "END:VCALENDAR"
+    ].join("\r\n");
+  }
+
+  function initShareCalendar(root, deadline) {
+    var actions = root.querySelector("[data-detail-actions]");
+    if (!actions) return;
+    var card = root.querySelector("[data-deadline-card]");
+    var title = (card && card.getAttribute("data-title")) || document.title;
+    var toast = root.querySelector("[data-share-toast]");
+
+    var calLink = actions.querySelector("[data-add-calendar]");
+    if (calLink) {
+      if (deadline) {
+        calLink.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(buildICS(title, deadline));
+        calLink.setAttribute("download", slugify(title) + ".ics");
+      } else {
+        calLink.parentNode.removeChild(calLink);
+      }
+    }
+
+    var shareBtn = actions.querySelector("[data-share]");
+    if (shareBtn) {
+      shareBtn.addEventListener("click", function () {
+        var data = { title: title, url: location.href };
+        if (navigator.share) {
+          navigator.share(data).catch(function () {});
+        } else if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(location.href).then(function () {
+            if (toast) toast.textContent = "Link copied to clipboard";
+          }).catch(function () {
+            if (toast) toast.textContent = location.href;
+          });
+        } else if (toast) {
+          toast.textContent = location.href;
+        }
+      });
+    }
+
+    actions.hidden = false;
   }
 
   function initDetail() {
@@ -126,11 +312,7 @@
     var card = root.querySelector("[data-deadline-card]");
     var d = deadline ? daysLeft(deadline) : null;
 
-    // The ink deadline card only makes sense for a tender with a deadline;
-    // hide it for pages/posts without one instead of showing a stuck "—".
-    if (card && d === null) {
-      card.hidden = true;
-    }
+    if (card && d === null) card.hidden = true;
 
     if (card && d !== null) {
       var kicker = card.querySelector("[data-deadline-kicker]");
@@ -152,14 +334,8 @@
       }
     }
 
-    // The post body carries a "View the original notice" link (from the
-    // scraper); the styled Source card already shows it, so drop the duplicate.
     stripAttribution(content);
 
-    // Move the "Tender details" facts into the ink card, mono-styled. Build
-    // real DOM nodes with textContent (never innerHTML) so a value containing
-    // "<", ">" or "&" can't corrupt the markup. Skip "Deadline" — the countdown
-    // already shows it.
     var extracted = extractFacts(content);
     var dl = card && card.querySelector("[data-deadline-facts]");
     if (dl && extracted.facts.length) {
@@ -183,11 +359,65 @@
         if (extracted.nodes[k].parentNode) extracted.nodes[k].parentNode.removeChild(extracted.nodes[k]);
       }
     }
+
+    initShareCalendar(root, deadline);
+  }
+
+  // ── Light / dark toggle ──────────────────────────────────
+  function initThemeToggle() {
+    var root = document.documentElement;
+    var btn = document.querySelector("[data-theme-toggle]");
+    if (!btn) return;
+    var mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    function current() {
+      var dt = root.getAttribute("data-theme");
+      if (dt) return dt;
+      if (root.classList.contains("scheme-dark")) return "dark";
+      if (root.classList.contains("scheme-auto")) return mq && mq.matches ? "dark" : "light";
+      return "light";
+    }
+    btn.addEventListener("click", function () {
+      var next = current() === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("qellal-theme", next); } catch (e) {}
+    });
+  }
+
+  // ── Mobile nav drawer ────────────────────────────────────
+  function initNav() {
+    var btn = document.querySelector(".nav-toggle");
+    var nav = document.getElementById("site-nav");
+    if (!btn || !nav) return;
+    function setOpen(open) {
+      nav.classList.toggle("is-open", open);
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    btn.addEventListener("click", function () { setOpen(!nav.classList.contains("is-open")); });
+    nav.addEventListener("click", function (e) { if (e.target.closest("a")) setOpen(false); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") setOpen(false); });
+  }
+
+  // ── Subscribe form feedback ──────────────────────────────
+  function initSubscribe() {
+    var forms = document.querySelectorAll('[data-members-form]');
+    for (var i = 0; i < forms.length; i++) {
+      (function (form) {
+        var section = form.closest ? form.closest("[data-subscribe]") : null;
+        var note = section ? section.querySelector("[data-subscribe-note]") : null;
+        form.addEventListener("submit", function () {
+          if (note) { note.textContent = "Check your inbox to confirm your subscription."; note.className = "subscribe-note ok"; }
+        });
+      })(forms[i]);
+    }
   }
 
   function init() {
     initCards();
+    initList();
     initDetail();
+    initThemeToggle();
+    initNav();
+    initSubscribe();
   }
 
   if (document.readyState === "loading") {

@@ -31,7 +31,7 @@
                 <h2>Source</h2>
                 <div class="source-card-row">
                     <div>
-                        <p class="em" style="font-weight:600;color:var(--ink)">2merkato</p>
+                        <p class="em" style="font-weight:600;color:var(--ink)">{{#if @custom.source_name}}{{@custom.source_name}}{{else}}2merkato{{/if}}</p>
                         <p style="margin:.25rem 0 0;font-size:.75rem;color:var(--muted)">Always verify against the original notice before bidding.</p>
                     </div>
                     <a class="btn btn-secondary btn-sm" href="{{canonical_url}}" target="_blank" rel="noopener noreferrer">View original ↗</a>
@@ -43,13 +43,34 @@
         </div>
 
         <aside class="detail-aside">
-            <div class="deadline-card" data-deadline-card>
+            <div class="deadline-card" data-deadline-card data-title="{{title}}">
                 <p class="deadline-kicker" data-deadline-kicker>Deadline</p>
                 <div class="deadline-count is-closed" data-deadline-count>—</div>
                 <p class="deadline-sub" data-deadline-sub>Published {{date format="D MMM YYYY"}}</p>
                 <dl class="deadline-facts" data-deadline-facts hidden></dl>
             </div>
+
+            <div class="detail-actions no-print" data-detail-actions hidden>
+                <a class="btn btn-secondary btn-sm" data-add-calendar download="tender.ics" href="#">＋ Add deadline to calendar</a>
+                <button class="btn btn-secondary btn-sm" type="button" data-share>⧉ Share this tender</button>
+            </div>
+            <p class="share-toast no-print" data-share-toast aria-live="polite"></p>
         </aside>
     </div>
+
+    {{#if primary_tag}}
+    {{#get "posts" filter="tag:{{primary_tag.slug}}+id:-{{id}}" limit="3" order="published_at desc"}}
+        {{#if posts}}
+        <section class="related no-print">
+            <h2>More tenders like this</h2>
+            <ul class="tender-cards">
+                {{#foreach posts}}
+                    <li>{{> tender-card}}</li>
+                {{/foreach}}
+            </ul>
+        </section>
+        {{/if}}
+    {{/get}}
+    {{/if}}
 </main>
 {{/post}}

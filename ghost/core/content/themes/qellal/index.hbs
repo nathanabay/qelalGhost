@@ -1,14 +1,15 @@
 {{!< default}}
 
 {{!-- The Qellal landing page: hero, stat strip, how-it-works, latest tenders,
-      features, and a closing CTA band. Tender listings live under the "2merkato"
-      tag; the header "Browse" links to the full paginated archive. --}}
+      category browse, features, subscribe, and a closing CTA band. Tender
+      listings live under the source tag ("2merkato" by default); the header
+      "Browse" links to the full paginated /tenders/ archive. --}}
 
 <main>
     <section class="hero">
         <span class="eyebrow"><span class="dot" aria-hidden="true"></span> Ethiopian tender intelligence</span>
-        <h1>Never miss a tender deadline again</h1>
-        <p class="lede">{{@site.title}} gathers every Ethiopian tender notice into one feed and alerts you by email &amp; Telegram — a week before the deadline, so your bid is never late.</p>
+        <h1>{{#if @custom.hero_heading}}{{@custom.hero_heading}}{{else}}Never miss a tender deadline again{{/if}}</h1>
+        <p class="lede">{{#if @custom.hero_subheading}}{{@custom.hero_subheading}}{{else}}{{@site.title}} gathers every Ethiopian tender notice into one feed and emails you before the deadline, so your bid is never late.{{/if}}</p>
         <div class="hero-cta">
             <a class="btn btn-primary" href="{{@site.url}}/tenders/">Browse tenders</a>
             {{#if @site.members_enabled}}<a class="btn btn-secondary" href="#/portal/signup" data-portal="signup">Create free account</a>{{/if}}
@@ -16,6 +17,7 @@
         <p class="fineprint">Free · No account needed to browse · Sources always attributed</p>
     </section>
 
+    {{#if @custom.show_stats}}
     <section class="statstrip">
         <div class="statstrip-grid">
             <div class="stat">
@@ -27,8 +29,8 @@
                 <div class="stat-label">Categories &amp; tags</div>
             </div>
             <div class="stat">
-                <div class="stat-value">2</div>
-                <div class="stat-label">Alert channels</div>
+                <div class="stat-value">Daily</div>
+                <div class="stat-label">Updated</div>
             </div>
             <div class="stat">
                 <div class="stat-value">ETB 0</div>
@@ -36,10 +38,11 @@
             </div>
         </div>
     </section>
+    {{/if}}
 
     <section class="section">
         <h2 class="section-title">How {{@site.title}} works</h2>
-        <p class="section-sub">From scattered portals to a single alert, in three steps.</p>
+        <p class="section-sub">From scattered portals to a single inbox, in three steps.</p>
         <div class="grid-3">
             <div class="step-card">
                 <div class="step-ic">1</div>
@@ -50,14 +53,14 @@
             <div class="step-card">
                 <div class="step-ic">2</div>
                 <span class="step-num" aria-hidden="true">2</span>
-                <h3>Save your search</h3>
-                <p>Filter by category, region or keyword, then save it as a recurring alert in one tap.</p>
+                <h3>Subscribe once</h3>
+                <p>Add your email and Qellal sends new tenders straight to your inbox — no dashboard to babysit.</p>
             </div>
             <div class="step-card">
                 <div class="step-ic">3</div>
                 <span class="step-num" aria-hidden="true">3</span>
                 <h3>Get alerted early</h3>
-                <p>Email &amp; Telegram reminders a week before the deadline — so your bid is never late.</p>
+                <p>Deadline reminders land before each close date — so your bid is never late.</p>
             </div>
         </div>
     </section>
@@ -77,6 +80,27 @@
         </section>
         {{/if}}
     {{/get}}
+
+    {{#if @custom.show_category_browse}}
+    {{#get "tags" limit="12" filter="visibility:public+slug:-2merkato" include="count.posts" order="count.posts desc"}}
+        {{#if tags}}
+        <section class="section" style="padding-bottom:0">
+            <div class="section-head">
+                <h2>Browse by category</h2>
+                <a class="link-more" href="{{@site.url}}/tenders/">All tenders →</a>
+            </div>
+        </section>
+        <div class="explore" style="margin-bottom:4rem">
+            {{#foreach tags}}
+                <a class="explore-card" href="{{url}}">
+                    <span class="lbl">{{name}}</span>
+                    <span class="sub">{{plural count.posts empty='0 tenders' singular='% tender' plural='% tenders'}}</span>
+                </a>
+            {{/foreach}}
+        </div>
+        {{/if}}
+    {{/get}}
+    {{/if}}
 
     <section class="section">
         <div class="grid-3">
@@ -98,12 +122,14 @@
         </div>
     </section>
 
+    {{> subscribe}}
+
     {{#if @site.members_enabled}}
     <section class="cta-band">
         <div class="wrap">
             <p class="cta-kicker">Live tenders · Updated daily</p>
             <h2>Start tracking tenders in under a minute</h2>
-            <p>Create a free account, save your first alert, and let {{@site.title}} watch the deadlines for you.</p>
+            <p>Create a free account and let {{@site.title}} watch the deadlines for you.</p>
             <div class="cta-actions">
                 <a class="btn btn-invert" href="#/portal/signup" data-portal="signup">Create free account</a>
                 <a class="btn btn-ghost-outline" href="{{@site.url}}/tenders/">Browse tenders</a>
