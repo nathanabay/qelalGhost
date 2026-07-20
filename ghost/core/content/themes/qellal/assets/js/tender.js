@@ -96,7 +96,15 @@
     });
     var items = lis.map(function (li) {
       var card = li.querySelector(".tender-card");
-      return { li: li, card: card, d: daysLeft(deadlineFrom(card.getAttribute("data-excerpt"))) };
+      var titleEl = card.querySelector(".tender-card-title");
+      var text = ((titleEl ? titleEl.textContent : "") + " " + (card.getAttribute("data-excerpt") || "")).toLowerCase();
+      return {
+        li: li, card: card,
+        d: daysLeft(deadlineFrom(card.getAttribute("data-excerpt"))),
+        primary: card.getAttribute("data-primary") || "",
+        name: card.getAttribute("data-primary-name") || "",
+        text: text
+      };
     });
     var original = items.slice();
     var withDeadline = items.filter(function (x) { return x.d !== null; });
@@ -104,7 +112,15 @@
     if (withDeadline.length < 2) return;
     if (toolbar) toolbar.hidden = false;
 
-    var state = { view: "grouped", hideClosed: false };
+    // Filter-aware empty state, inserted after the list.
+    var emptyEl = document.createElement("p");
+    emptyEl.className = "list-empty";
+    emptyEl.setAttribute("role", "status");
+    emptyEl.textContent = "No tenders match these filters.";
+    emptyEl.hidden = true;
+    ul.parentNode.insertBefore(emptyEl, ul.nextSibling);
+
+    var state = { view: "grouped", hideClosed: false, cat: "", q: "" };
     var groups = [
       { cls: "b-urgent", label: "Closing this week", test: function (d) { return d !== null && d >= 0 && d <= 7; } },
       { cls: "b-warn", label: "Closing this month", test: function (d) { return d !== null && d > 7 && d <= 30; } },
@@ -113,6 +129,13 @@
       { cls: "", label: "Closed", test: function (d) { return d !== null && d < 0; } }
     ];
 
+    function visible(x) {
+      if (state.cat && x.primary !== state.cat) return false;
+      if (state.q && x.text.indexOf(state.q) < 0) return false;
+      if (state.hideClosed && x.d !== null && x.d < 0) return false;
+      return true;
+    }
+
     function clearBands() {
       var bands = ul.querySelectorAll(".band");
       for (var i = 0; i < bands.length; i++) bands[i].parentNode.removeChild(bands[i]);
@@ -120,22 +143,21 @@
 
     function apply() {
       clearBands();
+      var anyVisible = false;
+      items.forEach(function (x) { var v = visible(x); x.card.classList.toggle("is-hidden", !v); if (v) anyVisible = true; });
+
       if (state.view === "newest") {
         original.forEach(function (x) { ul.appendChild(x.li); });
       } else {
         groups.forEach(function (g) {
           var members = items.filter(function (x) { return g.test(x.d); });
           if (!members.length) return;
-          var closedGroup = g.label === "Closed";
-          if (!(closedGroup && state.hideClosed)) ul.appendChild(makeBand(g.cls, g.label));
+          if (members.some(visible)) ul.appendChild(makeBand(g.cls, g.label));
           if (g.label !== "No deadline") members.sort(function (a, b) { return a.d - b.d; });
           members.forEach(function (x) { ul.appendChild(x.li); });
         });
       }
-      // hide-closed applies in either view
-      items.forEach(function (x) {
-        x.card.classList.toggle("is-hidden", state.hideClosed && x.d !== null && x.d < 0);
-      });
+      emptyEl.hidden = anyVisible;
     }
 
     if (toolbar) {
@@ -151,6 +173,27 @@
       }
       var chk = toolbar.querySelector("[data-hide-closed]");
       if (chk) chk.addEventListener("change", function () { state.hideClosed = chk.checked; apply(); });
+
+      var textInput = toolbar.querySelector("[data-text-filter]");
+      if (textInput) textInput.addEventListener("input", function () { state.q = textInput.value.trim().toLowerCase(); apply(); });
+
+      // Populate the category filter from tags present on this page.
+      var catSel = toolbar.querySelector("[data-cat-filter]");
+      var catField = toolbar.querySelector("[data-cat-field]");
+      if (catSel && catField) {
+        var cats = {};
+        items.forEach(function (x) { if (x.primary) cats[x.primary] = x.name || x.primary; });
+        var keys = Object.keys(cats).sort(function (a, b) { return cats[a].localeCompare(cats[b]); });
+        if (keys.length >= 2) {
+          keys.forEach(function (k) {
+            var o = document.createElement("option");
+            o.value = k; o.textContent = cats[k];
+            catSel.appendChild(o);
+          });
+          catField.hidden = false;
+          catSel.addEventListener("change", function () { state.cat = catSel.value; apply(); });
+        }
+      }
     }
 
     apply();
