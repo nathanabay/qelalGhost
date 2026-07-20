@@ -11,7 +11,7 @@
         <p class="lede">{{@site.title}} gathers every Ethiopian tender notice into one feed and alerts you by email &amp; Telegram — a week before the deadline, so your bid is never late.</p>
         <div class="hero-cta">
             <a class="btn btn-primary" href="{{@site.url}}/tenders/">Browse tenders</a>
-            <a class="btn btn-secondary" href="#/portal/signup" data-portal="signup">Create free account</a>
+            {{#if @site.members_enabled}}<a class="btn btn-secondary" href="#/portal/signup" data-portal="signup">Create free account</a>{{/if}}
         </div>
         <p class="fineprint">Free · No account needed to browse · Sources always attributed</p>
     </section>
@@ -98,6 +98,7 @@
         </div>
     </section>
 
+    {{#if @site.members_enabled}}
     <section class="cta-band">
         <div class="wrap">
             <p class="cta-kicker">Live tenders · Updated daily</p>
@@ -109,4 +110,5 @@
             </div>
         </div>
     </section>
+    {{/if}}
 </main>
