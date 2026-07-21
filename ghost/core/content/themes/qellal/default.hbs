@@ -38,6 +38,10 @@
                         <svg class="theme-ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path></svg>
                         <svg class="theme-ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"></path></svg>
                     </button>
+                    <button class="icon-btn saved-btn" type="button" data-saved-toggle aria-label="Saved tenders" hidden>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z"></path></svg>
+                        <span class="saved-count" data-saved-count hidden>0</span>
+                    </button>
                     {{#if @site.members_enabled}}
                         {{#if @member}}
                         <a class="btn btn-primary btn-sm" href="#/portal/account" data-portal="account">Account</a>
@@ -84,6 +88,7 @@
                 <div class="footer-col">
                     <h2 class="footer-heading">Sources</h2>
                     <p class="footer-blurb">Aggregated from public Ethiopian tender notices. Every listing links to its original source.</p>
+                    <ul><li><a href="{{@site.url}}/rss/">Follow all tenders by RSS →</a></li></ul>
                 </div>
             </div>
             <div class="footer-base">
@@ -92,6 +97,18 @@
             </div>
         </div>
     </footer>
+
+    {{!-- Saved-tenders drawer, filled client-side from localStorage. --}}
+    <div class="drawer-overlay no-print" data-saved-overlay hidden></div>
+    <aside class="saved-drawer no-print" data-saved-drawer aria-label="Saved tenders" aria-hidden="true">
+        <div class="saved-drawer-head">
+            <h2>Saved tenders <span class="saved-count-inline" data-saved-count-inline></span></h2>
+            <button class="icon-btn" type="button" data-saved-close aria-label="Close saved tenders">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="saved-drawer-body" data-saved-list></div>
+    </aside>
 
     <script src="{{asset "js/tender.js"}}"></script>
     {{ghost_foot}}

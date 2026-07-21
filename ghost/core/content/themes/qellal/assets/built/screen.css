@@ -468,3 +468,101 @@ button, [role="button"], a, label, select, summary { -webkit-tap-highlight-color
   .deadline-card { background: #fff !important; box-shadow: none !important; border: 1px solid #000 !important; margin-top: 1.5rem; }
   .deadline-card * { color: #000 !important; }
 }
+
+/* ═══ Next-wave UI (round 2) ═══════════════════════════════ */
+
+/* Save button on cards (JS-injected sibling of the card anchor) */
+.tender-cards > li { position: relative; }
+.card-save {
+  position: absolute; top: .6rem; right: .6rem; z-index: 2;
+  width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: .45rem; background: var(--surface); color: var(--muted);
+  cursor: pointer; transition: color .15s, border-color .15s, background-color .15s;
+}
+.card-save:hover { color: var(--ink); border-color: var(--muted); }
+.card-save svg { width: 1rem; height: 1rem; }
+.card-save.is-saved { color: var(--signal); border-color: var(--signal); background: var(--signal-bg); }
+.card-save.is-saved svg { fill: currentColor; }
+.tender-card.has-save .tender-card-top { padding-right: 1.9rem; }
+/* When a card is filtered out, collapse its whole <li> (so the floating save
+   button and grid cell go with it). :has covers modern browsers; the sibling
+   rule hides the orphaned button as a fallback. */
+.tender-cards > li:has(> .tender-card.is-hidden) { display: none; }
+.tender-card.is-hidden ~ .card-save { display: none; }
+
+/* Header saved button + count */
+.saved-btn { position: relative; }
+.saved-count { position: absolute; top: -.3rem; right: -.3rem; min-width: 1.05rem; height: 1.05rem; padding: 0 .22rem; border-radius: 999px; background: var(--signal); color: #fff; font-family: var(--font-mono); font-size: .62rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+/* Saved drawer */
+.drawer-overlay { position: fixed; inset: 0; background: rgba(23,20,13,.5); z-index: 60; opacity: 0; transition: opacity .2s; }
+.drawer-overlay.show { opacity: 1; }
+.saved-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(23rem, 92vw); background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow-lift); z-index: 61; transform: translateX(101%); transition: transform .22s ease; display: flex; flex-direction: column; }
+.saved-drawer.show { transform: none; }
+.saved-drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.1rem; border-bottom: 1px solid var(--border); }
+.saved-drawer-head h2 { font-size: 1.05rem; color: var(--ink); }
+.saved-count-inline { color: var(--muted); font-family: var(--font-mono); font-size: .85rem; }
+.saved-drawer-body { overflow-y: auto; padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .6rem; }
+.saved-item { border: 1px solid var(--border); border-radius: .6rem; padding: .7rem .8rem; background: var(--surface); }
+.saved-item a { font-weight: 600; color: var(--ink); font-size: .9rem; display: block; }
+.saved-item .srow { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .4rem; }
+.saved-item .smeta { font-family: var(--font-mono); font-size: .68rem; color: var(--muted); }
+.saved-remove { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: .72rem; text-decoration: underline; padding: 0; }
+.saved-remove:hover { color: var(--signal); }
+.saved-empty { color: var(--muted); font-size: .9rem; text-align: center; padding: 2.5rem 1rem; }
+
+/* Urgency meter on cards */
+.urgency-meter { height: 3px; border-radius: 2px; background: var(--hairline); margin-top: .75rem; overflow: hidden; }
+.urgency-meter > span { display: block; height: 100%; border-radius: 2px; background: var(--ok); transition: width .3s; }
+.urgency-meter.u-warn > span { background: var(--caution); }
+.urgency-meter.u-urgent > span { background: var(--signal); }
+.urgency-meter.u-closed > span { background: var(--muted); }
+
+/* Seen dimming */
+.tender-card.is-seen { opacity: .62; }
+.tender-card.is-seen:hover { opacity: 1; }
+
+/* Closing-today alert strip */
+.alert-strip { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; border: 1px solid var(--signal); background: var(--signal-bg); color: var(--signal); border-radius: .6rem; padding: .6rem .9rem; margin: 0 0 1.25rem; font-size: .875rem; font-weight: 600; }
+.alert-strip a { text-decoration: underline; color: inherit; }
+.alert-strip .dot { width: .5rem; height: .5rem; border-radius: 999px; background: var(--signal); flex-shrink: 0; animation: qpulse 1.6s infinite; }
+.alert-strip .x { margin-left: auto; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 1.05rem; line-height: 1; opacity: .7; }
+.alert-strip .x:hover { opacity: 1; }
+@keyframes qpulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+/* Recently viewed strip */
+.recent-strip { margin: 1.25rem 0 0; }
+.recent-strip h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-family: var(--font-mono); margin-bottom: .6rem; }
+.recent-row { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .3rem; }
+.recent-card { flex: 0 0 auto; max-width: 15rem; border: 1px solid var(--border); border-radius: .6rem; padding: .55rem .75rem; background: var(--surface); font-size: .82rem; font-weight: 600; color: var(--ink); box-shadow: var(--shadow-card); }
+.recent-card:hover { box-shadow: var(--shadow-lift); }
+
+/* Mobile sticky deadline bar (detail) */
+.mobile-deadline-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: none; align-items: center; justify-content: space-between; gap: .75rem; padding: .55rem .9rem; background: var(--panel); color: var(--panel-text); border-top: 1px solid var(--panel-border); }
+.mobile-deadline-bar .md-count { font-family: var(--font-mono); font-weight: 700; font-size: .95rem; }
+.mobile-deadline-bar .md-count.is-urgent { color: var(--signal); }
+.mobile-deadline-bar .md-count.is-warn { color: var(--caution); }
+.mobile-deadline-bar .md-sub { font-size: .72rem; color: var(--panel-muted); }
+.mobile-deadline-bar .btn-invert { min-height: 2.2rem; padding: 0 1rem; font-size: .85rem; }
+@media (max-width: 1023px) { .mobile-deadline-bar.show { display: flex; } }
+
+/* Compact / dense list layout for wide screens */
+.tender-list.is-compact { max-width: 60rem; }
+.tender-list.is-compact .tender-card { padding: .7rem .9rem; }
+.tender-list.is-compact .tender-card-meta { display: none; }
+.tender-list.is-compact .urgency-meter { margin-top: .5rem; }
+@media (min-width: 720px) {
+  .tender-list.is-compact .tender-cards { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; align-items: start; }
+  .tender-list.is-compact .tender-cards > li.band { grid-column: 1 / -1; }
+}
+
+/* Keyboard navigation highlight */
+.tender-card.kbd-active { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+/* RSS follow link on archive heroes */
+.archive-follow { margin-top: .5rem; font-size: .8rem; }
+.archive-follow a { color: var(--signal); font-weight: 600; }
+.archive-follow a:hover { text-decoration: underline; }
+
+/* Detail save-button pressed state */
+.btn[data-save-tender][aria-pressed="true"] { background: var(--signal); color: #fff; border-color: var(--signal); }

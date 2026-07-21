@@ -9,10 +9,12 @@
     {{#if feature_image}}<img class="archive-hero-img" src="{{img_url feature_image size="l"}}" alt="{{name}}" loading="lazy">{{/if}}
     <h1>{{name}}</h1>
     <p><span class="count">{{plural ../pagination.total empty='No tenders' singular='% tender' plural='% tenders'}}</span>{{#if description}} · {{description}}{{/if}}</p>
+    <p class="archive-follow"><a href="{{@site.url}}/tag/{{slug}}/rss/">Follow “{{name}}” by RSS →</a></p>
 </header>
 {{/tag}}
 
 <section class="tender-list" data-tender-page>
+    <div data-closing-alert></div>
     <div class="tender-list-head">
         <div></div>
         <a class="link-more" href="{{@site.url}}">Home</a>
