@@ -4,3 +4,6 @@ storage/
 .env.*
 .ghost-admin-key
 *.log
+.ghost-prod-key
+.ghost-meili-search-key
+.ghost-*-key

@@ -23,7 +23,7 @@ export type GhostPost = {
   custom_excerpt?: string;
   canonical_url?: string;
   published_at?: string;
-  tags: { name: string }[];
+  tags: { name: string; slug?: string }[];
   authors?: { id: string }[];
 };
 
@@ -53,21 +53,40 @@ export function tenderSlug(t: Pick<TenderInput, "source_url">): string {
 
 // Tags = categories (primary first) + region + language + source. Deduped,
 // trimmed, capped at Ghost's 191-char tag-name limit.
-export function tenderTags(t: TenderInput): { name: string }[] {
-  const names: string[] = [];
-  for (const c of t.categories) if (c?.name) names.push(c.name);
-  if (t.region) names.push(t.region);
-  names.push(detectLanguage(t));
-  if (t.source_name) names.push(t.source_name);
+// Slug for an entity tag: latinises what it can, hashes non-latin (Amharic)
+// names so every company still gets a stable, unique "entity-*" slug.
+function entitySlug(name: string): string {
+  const base = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 170);
+  const sl = base || crypto.createHash("sha1").update(name).digest("hex").slice(0, 16);
+  return `entity-${sl}`;
+}
+
+export function tenderTags(t: TenderInput): { name: string; slug?: string }[] {
+  const raw: { name: string; slug?: string }[] = [];
+  for (const c of t.categories) if (c?.name) raw.push({ name: c.name });
+  if (t.region) raw.push({ name: t.region });
+  raw.push({ name: detectLanguage(t) });
+  if (t.source_name) raw.push({ name: t.source_name });
+  // The publishing entity is a tag too, with an explicit "entity-*" slug so the
+  // theme can hide it from the category chips and link to it as a company page.
+  if (t.publishing_entity) {
+    raw.push({ name: t.publishing_entity, slug: entitySlug(t.publishing_entity) });
+  }
 
   const seen = new Set<string>();
-  const tags: { name: string }[] = [];
-  for (const raw of names) {
-    const name = raw.trim().slice(0, TAG_MAX);
+  const tags: { name: string; slug?: string }[] = [];
+  for (const item of raw) {
+    const name = item.name.trim().slice(0, TAG_MAX);
     const key = name.toLowerCase();
     if (!name || seen.has(key)) continue;
     seen.add(key);
-    tags.push({ name });
+    tags.push(item.slug ? { name, slug: item.slug } : { name });
   }
   return tags;
 }
@@ -208,6 +227,23 @@ export class GhostAdminClient {
     return urls;
   }
 
+  // Every existing tender-* slug, for dedupe in the Supabase migration.
+  async getExistingTenderSlugs(): Promise<Set<string>> {
+    const slugs = new Set<string>();
+    let page = 1;
+    for (;;) {
+      const r = await this.req(
+        `/posts/?limit=100&page=${page}&fields=slug&filter=${encodeURIComponent("slug:~'tender-'")}`,
+      );
+      if (!r.ok) throw new Error(`list posts failed: ${r.status} ${await r.text()}`);
+      const body = (await r.json()) as { posts: { slug: string }[]; meta: { pagination: { pages: number } } };
+      for (const p of body.posts) slugs.add(p.slug);
+      if (page >= (body.meta?.pagination?.pages ?? page)) break;
+      page += 1;
+    }
+    return slugs;
+  }
+
   // Create one post from HTML. Returns the new post's id/url or throws.
   async createPost(post: GhostPost): Promise<{ id: string; url: string }> {
     const r = await this.req("/posts/?source=html", {
@@ -217,6 +253,21 @@ export class GhostAdminClient {
     if (!r.ok) throw new Error(`create post failed (${r.status}): ${await r.text()}`);
     const body = (await r.json()) as { posts: { id: string; url: string }[] };
     return { id: body.posts[0].id, url: body.posts[0].url };
+  }
+
+  // Generic authenticated Admin API GET (path under /ghost/api/admin). Used by
+  // the Meili indexer to page through tender posts.
+  async adminGet<T = unknown>(path: string): Promise<T> {
+    const r = await this.req(path);
+    if (!r.ok) throw new Error(`GET ${path} failed (${r.status}): ${await r.text()}`);
+    return (await r.json()) as T;
+  }
+
+  // Generic authenticated Admin API POST.
+  async adminPost<T = unknown>(path: string, body: unknown): Promise<T> {
+    const r = await this.req(path, { method: "POST", body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(`POST ${path} failed (${r.status}): ${await r.text()}`);
+    return (await r.json()) as T;
   }
 }
 

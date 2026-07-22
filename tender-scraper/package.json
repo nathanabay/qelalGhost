@@ -7,11 +7,15 @@
   "scripts": {
     "scrape": "tsx src/main.ts",
     "schedule": "tsx src/schedule.ts",
-    "typecheck": "tsc --noEmit"
+    "meili:index": "tsx src/meili-index.ts",
+    "typecheck": "tsc --noEmit",
+    "migrate:supabase": "tsx src/migrate-from-supabase.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
     "cheerio": "^1.0.0",
-    "crawlee": "^3.11.5"
+    "crawlee": "^3.11.5",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
