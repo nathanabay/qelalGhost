@@ -259,8 +259,11 @@
     if (items.filter(function (x) { return x.d !== null; }).length < 2) return;
     if (toolbar) toolbar.hidden = false;
 
-    var emptyEl = document.createElement("p"); emptyEl.className = "list-empty"; emptyEl.setAttribute("role", "status");
-    emptyEl.textContent = "No tenders match these filters."; emptyEl.hidden = true;
+    var emptyEl = document.createElement("div"); emptyEl.className = "list-empty"; emptyEl.setAttribute("role", "status"); emptyEl.hidden = true;
+    var emptyMsg = document.createElement("p"); emptyMsg.className = "list-empty-msg"; emptyMsg.textContent = "No tenders match these filters.";
+    var emptyCta = document.createElement("button"); emptyCta.type = "button"; emptyCta.className = "btn btn-primary btn-sm list-empty-cta"; emptyCta.hidden = true;
+    emptyCta.addEventListener("click", function () { if (state.q) location.href = "/tenders/?q=" + encodeURIComponent(state.q); });
+    emptyEl.appendChild(emptyMsg); emptyEl.appendChild(emptyCta);
     ul.parentNode.insertBefore(emptyEl, ul.nextSibling);
 
     var state = { view: "grouped", hideClosed: false, cat: "", q: "", density: lsGet(DENSITY_KEY, "cards") };
@@ -293,6 +296,14 @@
         });
       }
       emptyEl.hidden = any;
+      if (!any) {
+        // The page-local filter only sees this page's cards; when it finds
+        // nothing, offer to search ALL tenders (Meili) for the same query.
+        var hasQ = !!state.q;
+        emptyMsg.textContent = hasQ ? "No tenders on this page match “" + state.q + "”." : "No tenders match these filters.";
+        emptyCta.hidden = !(hasQ && window.__openTenderSearch);
+        if (!emptyCta.hidden) emptyCta.textContent = "Search all tenders for “" + state.q + "” →";
+      }
       writeHash();
     }
 
@@ -320,22 +331,56 @@
     }
 
     if (toolbar) {
+      // On the /tenders channel (browse-wrap + Meili configured), the sort
+      // buttons drive a GLOBAL Meili sort instead of a misleading page-local
+      // re-order. Elsewhere (tag pages) they keep the client-side page sort.
+      var canGlobalSort = !!(document.querySelector("[data-browse-wrap]") && window.QELLAL_SEARCH && window.QELLAL_SEARCH.host);
       var viewBtns = toolbar.querySelectorAll("[data-list-view]");
-      [].forEach.call(viewBtns, function (b) { b.addEventListener("click", function () { state.view = b.getAttribute("data-list-view"); [].forEach.call(viewBtns, function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); }); apply(); }); });
+      [].forEach.call(viewBtns, function (b) {
+        b.addEventListener("click", function () {
+          if (canGlobalSort) {
+            location.href = "/tenders/?sort=" + (b.getAttribute("data-list-view") === "newest" ? "newest" : "deadline");
+            return;
+          }
+          state.view = b.getAttribute("data-list-view");
+          [].forEach.call(viewBtns, function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+          apply();
+        });
+      });
       var densBtns = toolbar.querySelectorAll("[data-list-density]");
       [].forEach.call(densBtns, function (b) { b.addEventListener("click", function () { state.density = b.getAttribute("data-list-density"); lsSet(DENSITY_KEY, state.density); [].forEach.call(densBtns, function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); }); applyDensity(); writeHash(); }); });
       var chk = toolbar.querySelector("[data-hide-closed]");
       if (chk) chk.addEventListener("change", function () { state.hideClosed = chk.checked; apply(); });
       var textInput = toolbar.querySelector("[data-text-filter]");
-      if (textInput) textInput.addEventListener("input", function () { state.q = textInput.value.trim().toLowerCase(); apply(); });
+      if (textInput) {
+        textInput.addEventListener("input", function () { state.q = textInput.value.trim().toLowerCase(); apply(); });
+        // Enter escalates the page-local filter to a full search across all tenders.
+        textInput.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") { e.preventDefault(); var q = textInput.value.trim(); if (q) location.href = "/tenders/?q=" + encodeURIComponent(q); }
+        });
+      }
       var catSel = toolbar.querySelector("[data-cat-filter]"), catField = toolbar.querySelector("[data-cat-field]");
       if (catSel && catField) {
-        var cats = {}; items.forEach(function (x) { if (x.primary) cats[x.primary] = x.name || x.primary; });
-        var keys = Object.keys(cats).sort(function (a, b) { return cats[a].localeCompare(cats[b]); });
-        if (keys.length >= 2) {
-          keys.forEach(function (k) { var o = document.createElement("option"); o.value = k; o.textContent = cats[k]; catSel.appendChild(o); });
+        var allCats = window.QELLAL_CATEGORIES || [];
+        if (allCats.length) {
+          // Full sector taxonomy → selecting one jumps to that sector's page
+          // (server-paginated), so it works even for sectors not on this page.
+          allCats.forEach(function (c) { var o = document.createElement("option"); o.value = c.slug; o.textContent = c.name; catSel.appendChild(o); });
+          var onTag = location.pathname.match(/^\/tag\/([^\/]+)\/?$/);
+          if (onTag) catSel.value = onTag[1];
           catField.hidden = false;
-          catSel.addEventListener("change", function () { state.cat = catSel.value; apply(); });
+          catSel.addEventListener("change", function () {
+            location.href = catSel.value ? "/tag/" + catSel.value + "/" : "/tenders/";
+          });
+        } else {
+          // Fallback (no category data): filter the current page from its cards.
+          var cats = {}; items.forEach(function (x) { if (x.primary) cats[x.primary] = x.name || x.primary; });
+          var keys = Object.keys(cats).sort(function (a, b) { return cats[a].localeCompare(cats[b]); });
+          if (keys.length >= 2) {
+            keys.forEach(function (k) { var o = document.createElement("option"); o.value = k; o.textContent = cats[k]; catSel.appendChild(o); });
+            catField.hidden = false;
+            catSel.addEventListener("change", function () { state.cat = catSel.value; apply(); });
+          }
         }
       }
 
@@ -441,12 +486,25 @@
     var extracted = extractFacts(content);
     var dl = card && card.querySelector("[data-deadline-facts]");
     if (dl && extracted.facts.length) {
+      // The publishing entity is also a hidden "entity-*" tag on the post; link
+      // the fact to that tag page so a click lists all tenders from the company.
+      var entityChip = root.querySelector('.detail-chips a[data-tag^="entity-"]');
+      var entityHref = entityChip ? entityChip.getAttribute("href") : null;
       var any = false;
       for (var i = 0; i < extracted.facts.length; i++) {
         var f = extracted.facts[i]; if (/^deadline$/i.test(f.label)) continue;
         var row = document.createElement("div"); row.className = "row";
         var dt = document.createElement("dt"); dt.textContent = f.label;
-        var dd = document.createElement("dd"); dd.textContent = f.value;
+        var dd = document.createElement("dd");
+        if (entityHref && /publishing entity/i.test(f.label)) {
+          var a = document.createElement("a");
+          a.href = entityHref;
+          a.textContent = f.value;
+          a.title = "See all tenders from " + f.value;
+          dd.appendChild(a);
+        } else {
+          dd.textContent = f.value;
+        }
         row.appendChild(dt); row.appendChild(dd); dl.appendChild(row); any = true;
       }
       if (any) dl.hidden = false;
@@ -497,9 +555,11 @@
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
       if (e.key === "/") {
+        var sp = document.querySelector("[data-sp-input]");
         var tf = document.querySelector("[data-text-filter]");
-        if (tf && tf.offsetParent !== null) { e.preventDefault(); tf.focus(); }
-        else { var s = document.querySelector("[data-ghost-search]"); if (s) { e.preventDefault(); s.click(); } }
+        if (sp && sp.offsetParent !== null) { e.preventDefault(); sp.focus(); }
+        else if (tf && tf.offsetParent !== null) { e.preventDefault(); tf.focus(); }
+        else { var s = document.querySelector("[data-tender-search]"); if (s) { e.preventDefault(); s.click(); } }
       } else if (e.key === "j") { e.preventDefault(); focusCard(active + 1); }
       else if (e.key === "k") { e.preventDefault(); focusCard(active - 1); }
       else if (e.key === "Enter" && active >= 0) { var l = cards(); if (l[active]) l[active].click(); }
@@ -532,7 +592,401 @@
     })(forms[i]);
   }
 
+  // ── Meilisearch tender search ────────────────────────────
+  function initSearch() {
+    var cfg = window.QELLAL_SEARCH || {};
+    var openers = document.querySelectorAll("[data-tender-search]");
+    var modal = document.querySelector("[data-search-modal]");
+    if (!openers.length || !modal) return;
+    // Without a configured Meili endpoint, hide the search affordance entirely.
+    if (!cfg.host || !cfg.key || !cfg.index) {
+      for (var o = 0; o < openers.length; o++) openers[o].hidden = true;
+      return;
+    }
+    var input = modal.querySelector("[data-search-input]");
+    var results = modal.querySelector("[data-search-results]");
+    var meta = modal.querySelector("[data-search-meta]");
+    var overlay = modal.querySelector("[data-search-overlay]");
+    var panel = modal.querySelector(".search-panel");
+    var allLink = modal.querySelector("[data-search-all]");
+    var endpoint = cfg.host.replace(/\/+$/, "") + "/indexes/" + cfg.index + "/search";
+    var PAGE = 12;
+    // Sentinel highlight tags: Meili does NOT escape surrounding text, so we ask
+    // for control-char markers, HTML-escape the whole string, then swap the
+    // markers for <mark> — highlighting without an XSS hole on scraped titles.
+    var HL_PRE = "\u0001", HL_POST = "\u0002";
+    var timer = null, seq = 0, active = -1;
+    var curQ = "", offset = 0, total = 0, rendered = 0, loading = false;
+
+    function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    function hl(s) { return esc(s).split(HL_PRE).join("<mark>").split(HL_POST).join("</mark>"); }
+
+    function open() {
+      modal.hidden = false;
+      modal.setAttribute("aria-hidden", "false");
+      input.setAttribute("aria-expanded", "true");
+      document.body.style.overflow = "hidden";
+      setTimeout(function () { input.focus(); input.select(); }, 20);
+      if (input.value.trim()) newSearch(input.value); else { results.innerHTML = ""; setMeta(); }
+    }
+    function close() {
+      modal.hidden = true;
+      modal.setAttribute("aria-hidden", "true");
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+      document.body.style.overflow = "";
+    }
+    function badge(d) {
+      if (d === null) return "";
+      if (d < 0) return '<span class="badge is-closed">Closed</span>';
+      if (d === 0) return '<span class="badge is-urgent">Closes today</span>';
+      var cls = d <= 3 ? "is-urgent" : d <= 7 ? "is-warn" : "";
+      return '<span class="badge ' + cls + '">' + d + "d left</span>";
+    }
+    function setActive(i) {
+      var items = results.querySelectorAll(".search-hit");
+      if (!items.length) { active = -1; input.removeAttribute("aria-activedescendant"); return; }
+      active = i;
+      for (var k = 0; k < items.length; k++) {
+        var on = k === active;
+        items[k].classList.toggle("is-active", on);
+        items[k].setAttribute("aria-selected", on ? "true" : "false");
+      }
+      if (active >= 0) { input.setAttribute("aria-activedescendant", items[active].id); items[active].scrollIntoView({ block: "nearest" }); }
+      else input.removeAttribute("aria-activedescendant");
+    }
+    function hitEl(h, i) {
+      var f = h._formatted || {};
+      var a = document.createElement("a");
+      a.className = "search-hit";
+      a.id = "search-hit-" + i;
+      a.href = h.url || "#";
+      a.setAttribute("role", "option");
+      a.setAttribute("aria-selected", "false");
+      var d = daysLeft(h.deadline);
+      var title = document.createElement("span");
+      title.className = "search-hit-title";
+      title.innerHTML = hl(f.title || h.title || "Untitled tender");
+      var m = document.createElement("span");
+      m.className = "search-hit-meta";
+      m.innerHTML = hl(f.publishing_entity || h.publishing_entity || "");
+      var b = document.createElement("span");
+      b.className = "search-hit-badge";
+      b.innerHTML = badge(d);
+      a.appendChild(title); a.appendChild(m); a.appendChild(b);
+      // Only show a description snippet when the match is actually in the body.
+      var snip = f.description || "";
+      if (snip && snip.indexOf(HL_PRE) >= 0) {
+        var sn = document.createElement("span");
+        sn.className = "search-hit-snippet";
+        sn.innerHTML = "…" + hl(snip) + "…";
+        a.appendChild(sn);
+      }
+      return a;
+    }
+    function removeMore() { var mb = results.querySelector(".search-more"); if (mb) mb.remove(); }
+    function addMore() {
+      removeMore();
+      if (rendered < total) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "search-more";
+        btn.textContent = "Show more (" + (total - rendered).toLocaleString() + " more)";
+        btn.addEventListener("click", function () { fetchPage(true); });
+        results.appendChild(btn);
+      }
+    }
+    function setMeta() {
+      if (meta) meta.textContent = curQ && total ? (total.toLocaleString() + " match" + (total === 1 ? "" : "es")) : "";
+      if (allLink) {
+        if (curQ && total) { allLink.href = "/tenders/?q=" + encodeURIComponent(curQ); allLink.hidden = false; }
+        else allLink.hidden = true;
+      }
+    }
+    function newSearch(q) {
+      curQ = q.trim(); offset = 0; rendered = 0; total = 0; active = -1;
+      results.innerHTML = "";
+      if (!curQ) { setMeta(); return; }
+      fetchPage(false);
+    }
+    function fetchPage(append) {
+      if (loading) return;
+      loading = true;
+      var my = ++seq;
+      removeMore();
+      fetch(endpoint, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + cfg.key, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          q: curQ,
+          limit: PAGE,
+          offset: offset,
+          // Break relevance ties in favour of still-open tenders.
+          sort: ["open_rank:asc"],
+          attributesToRetrieve: ["id", "url", "title", "publishing_entity", "deadline"],
+          attributesToHighlight: ["title", "publishing_entity", "description"],
+          attributesToCrop: ["description"],
+          cropLength: 24,
+          highlightPreTag: HL_PRE,
+          highlightPostTag: HL_POST,
+        }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          loading = false;
+          if (my !== seq) return; // a newer query superseded this one
+          var hits = data.hits || [];
+          total = data.estimatedTotalHits != null ? data.estimatedTotalHits : (offset + hits.length);
+          if (!append) results.innerHTML = "";
+          for (var i = 0; i < hits.length; i++) results.appendChild(hitEl(hits[i], rendered + i));
+          rendered += hits.length;
+          offset += hits.length;
+          if (rendered === 0) {
+            results.innerHTML = '<p class="search-empty">No tenders match “' + esc(curQ) + '”.</p>';
+          } else {
+            addMore();
+          }
+          setMeta();
+        })
+        .catch(function () {
+          loading = false;
+          if (my !== seq) return;
+          results.innerHTML = '<p class="search-empty">Search is unavailable right now.</p>';
+        });
+    }
+    function onType() {
+      var q = input.value.trim();
+      if (timer) clearTimeout(timer);
+      if (!q) { curQ = ""; total = 0; rendered = 0; results.innerHTML = ""; setMeta(); return; }
+      timer = setTimeout(function () { newSearch(q); }, 180);
+    }
+    function move(delta) {
+      var items = results.querySelectorAll(".search-hit");
+      if (!items.length) return;
+      var next = active < 0 ? (delta > 0 ? 0 : items.length - 1) : (active + delta + items.length) % items.length;
+      setActive(next);
+    }
+
+    // Let other widgets (e.g. the list toolbar's empty state) open the global
+    // search pre-filled with a query — bridging the page-local filter to Meili.
+    window.__openTenderSearch = function (q) { if (typeof q === "string" && q) input.value = q; open(); };
+
+    for (var k = 0; k < openers.length; k++) openers[k].addEventListener("click", open);
+    if (overlay) overlay.addEventListener("click", close);
+    input.addEventListener("input", onType);
+    document.addEventListener("keydown", function (e) {
+      if (modal.hidden) return;
+      if (e.key === "Escape") { close(); return; }
+      if (e.key === "ArrowDown") { e.preventDefault(); move(1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); move(-1); }
+      else if (e.key === "Enter") {
+        // Enter opens the highlighted result, or the first one if none is.
+        var items = results.querySelectorAll(".search-hit");
+        if (!items.length) return;
+        var idx = active >= 0 ? active : 0;
+        if (items[idx]) window.location.href = items[idx].href;
+      }
+    });
+    // Keep keyboard focus inside the dialog while it's open (focus trap).
+    document.addEventListener("focusin", function (e) {
+      if (modal.hidden) return;
+      if (panel && !panel.contains(e.target)) input.focus();
+    });
+    // Cmd/Ctrl-K global shortcut.
+    document.addEventListener("keydown", function (e) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); open(); }
+    });
+  }
+
+  // ── full-page tender search (/search/) ───────────────────
+  function initSearchPage() {
+    var root = document.querySelector("[data-search-page]");
+    if (!root) return;
+    var cfg = window.QELLAL_SEARCH || {};
+    var form = root.querySelector("[data-sp-form]");
+    var input = root.querySelector("[data-sp-input]");
+    var catSel = root.querySelector("[data-sp-cat]");
+    var sortSel = root.querySelector("[data-sp-sort]");
+    var deadlineSel = root.querySelector("[data-sp-deadline]");
+    var hideClosed = root.querySelector("[data-sp-hideclosed]");
+    var resultsUl = root.querySelector("[data-sp-results]");
+    var emptyEl = root.querySelector("[data-sp-empty]");
+    var moreWrap = root.querySelector("[data-sp-more]");
+    var metaEl = root.querySelector("[data-sp-meta]");
+    // On the /tenders channel the search shares the page with a browse list:
+    // typing switches to search mode, clearing returns to browse.
+    var browseWrap = root.querySelector("[data-browse-wrap]");
+    var searchWrap = root.querySelector("[data-search-wrap]");
+    if (!input || !resultsUl) return;
+    if (!cfg.host || !cfg.key || !cfg.index) {
+      if (metaEl) metaEl.textContent = "Search is not configured.";
+      if (form) form.hidden = true;
+      return;
+    }
+    // With a prominent global search box present, hide the browse toolbar's
+    // page-local "Filter this page…" input so there aren't two search fields.
+    if (browseWrap) { var _tf = browseWrap.querySelector("[data-text-filter]"); if (_tf) _tf.style.display = "none"; }
+    function setMode(searching) {
+      if (searchWrap) searchWrap.hidden = !searching;
+      if (browseWrap) browseWrap.hidden = searching;
+    }
+    var endpoint = cfg.host.replace(/\/+$/, "") + "/indexes/" + cfg.index + "/search";
+    var PAGE = 20;
+    var HL_PRE = "\u0001", HL_POST = "\u0002";
+    var seq = 0, offset = 0, total = 0, rendered = 0, loading = false, curQ = "";
+
+    function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    function hl(s) { return esc(s).split(HL_PRE).join("<mark>").split(HL_POST).join("</mark>"); }
+
+    var cats = window.QELLAL_CATEGORIES || [], slugToName = {};
+    if (catSel && cats.length) {
+      cats.forEach(function (c) { slugToName[c.slug] = c.name; var o = document.createElement("option"); o.value = c.slug; o.textContent = c.name; catSel.appendChild(o); });
+    }
+
+    function readURL() {
+      var p = new URLSearchParams(location.search);
+      curQ = p.get("q") || "";
+      input.value = curQ;
+      if (catSel && p.get("cat")) catSel.value = p.get("cat");
+      if (sortSel && p.get("sort")) sortSel.value = p.get("sort");
+      if (deadlineSel && p.get("deadline")) deadlineSel.value = p.get("deadline");
+      if (hideClosed && p.get("closed") === "0") hideClosed.checked = true;
+    }
+    function writeURL() {
+      var p = new URLSearchParams();
+      if (curQ) p.set("q", curQ);
+      if (sortSel && sortSel.value && sortSel.value !== "relevance") p.set("sort", sortSel.value);
+      if (catSel && catSel.value) p.set("cat", catSel.value);
+      if (deadlineSel && deadlineSel.value) p.set("deadline", deadlineSel.value);
+      if (hideClosed && hideClosed.checked) p.set("closed", "0");
+      var qs = p.toString();
+      try { history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + (location.hash || "")); } catch (e) {}
+    }
+    // Sort: "newest" = most recently published; "deadline" = closing soonest
+    // (open tenders first, then soonest); default "relevance" keeps open first.
+    function sortValue() {
+      var s = sortSel ? sortSel.value : "relevance";
+      if (s === "newest") return ["published_ts:desc"];
+      if (s === "deadline") return ["open_rank:asc", "deadline_ts:asc"];
+      return ["open_rank:asc"];
+    }
+    function buildFilter() {
+      var f = [];
+      if (catSel && catSel.value && slugToName[catSel.value]) f.push('categories = "' + slugToName[catSel.value].replace(/"/g, '\\"') + '"');
+      if (hideClosed && hideClosed.checked) f.push("open_rank = 0");
+      if (deadlineSel && deadlineSel.value) {
+        var days = parseInt(deadlineSel.value, 10);
+        if (days > 0) { var t0 = Math.floor(todayUTC() / 1000); f.push("deadline_ts >= " + t0); f.push("deadline_ts <= " + (t0 + days * 86400)); }
+      }
+      return f.length ? f.join(" AND ") : undefined;
+    }
+    // "Active" = anything beyond the pristine landing: a query, a non-default
+    // sort, or any filter. Drives whether we show Meili results or the browse list.
+    function active() {
+      return !!((curQ) || (sortSel && sortSel.value && sortSel.value !== "relevance") ||
+        (catSel && catSel.value) || (deadlineSel && deadlineSel.value) || (hideClosed && hideClosed.checked));
+    }
+    function cardEl(h) {
+      var f = h._formatted || {};
+      var li = document.createElement("li");
+      var a = document.createElement("a");
+      a.className = "tender-card"; a.href = h.url || "#"; a.setAttribute("data-tender", "");
+      var dl = h.deadline || "";
+      a.setAttribute("data-excerpt", dl ? "Deadline " + dl : "");
+      var pub = h.published_ts ? new Date(h.published_ts * 1000) : null;
+      if (pub) { var ymd = pub.getUTCFullYear() + "-" + pad(pub.getUTCMonth() + 1) + "-" + pad(pub.getUTCDate()); a.setAttribute("data-published", ymd); }
+      var top = document.createElement("div"); top.className = "tender-card-top";
+      var title = document.createElement("h2"); title.className = "tender-card-title"; title.innerHTML = hl(f.title || h.title || "Untitled tender");
+      var badge = document.createElement("span"); badge.className = "badge is-closed"; badge.setAttribute("data-deadline-badge", ""); badge.hidden = true; badge.textContent = "—";
+      top.appendChild(title); top.appendChild(badge); a.appendChild(top);
+      var parts = [];
+      var buyer = f.publishing_entity || h.publishing_entity || "";
+      if (buyer) parts.push(hl(buyer));
+      var snip = f.description || "";
+      if (snip && snip.indexOf(HL_PRE) >= 0) parts.push("…" + hl(snip) + "…");
+      if (parts.length) { var mp = document.createElement("p"); mp.className = "tender-card-meta"; mp.innerHTML = parts.join(" — "); a.appendChild(mp); }
+      var foot = document.createElement("div"); foot.className = "tender-card-foot";
+      var left = document.createElement("span");
+      var cat0 = (h.categories && h.categories[0]) || "";
+      left.innerHTML = (cat0 ? '<span class="chip">' + esc(cat0) + "</span> " : "") + "Published <span class=\"em\">" + (pub ? esc(formatDate(pub.toISOString())) : "—") + "</span>";
+      var right = document.createElement("span"); right.textContent = "Source: 2merkato";
+      foot.appendChild(left); foot.appendChild(right); a.appendChild(foot);
+      li.appendChild(a);
+      var d = daysLeft(h.deadline);
+      renderBadge(badge, d);
+      addMeter(a, d);
+      addCardSave(a);
+      return li;
+    }
+    function renderMeta() {
+      if (!metaEl) return;
+      if (!active()) { metaEl.textContent = ""; return; }
+      var noun = total.toLocaleString() + " tender" + (total === 1 ? "" : "s");
+      if (rendered === 0) metaEl.textContent = "No matches.";
+      else if (curQ) metaEl.textContent = noun + " match “" + curQ + "”.";
+      else metaEl.textContent = noun + ".";
+    }
+    function renderMore() {
+      moreWrap.innerHTML = "";
+      if (rendered < total) {
+        var b = document.createElement("button"); b.type = "button"; b.className = "btn";
+        b.textContent = "Show more (" + (total - rendered).toLocaleString() + " more)";
+        b.addEventListener("click", function () { fetchPage(true); });
+        moreWrap.appendChild(b);
+      }
+    }
+    function fetchPage(append) {
+      if (loading) return; loading = true;
+      var my = ++seq;
+      var body = {
+        q: curQ, limit: PAGE, offset: offset, sort: sortValue(),
+        attributesToRetrieve: ["id", "url", "title", "publishing_entity", "categories", "deadline", "published_ts"],
+        attributesToHighlight: ["title", "publishing_entity", "description"],
+        attributesToCrop: ["description"], cropLength: 30,
+        highlightPreTag: HL_PRE, highlightPostTag: HL_POST,
+      };
+      var filt = buildFilter(); if (filt) body.filter = filt;
+      fetch(endpoint, { method: "POST", headers: { Authorization: "Bearer " + cfg.key, "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          loading = false; if (my !== seq) return;
+          var hits = data.hits || [];
+          total = data.estimatedTotalHits != null ? data.estimatedTotalHits : (offset + hits.length);
+          if (!append) resultsUl.innerHTML = "";
+          for (var i = 0; i < hits.length; i++) resultsUl.appendChild(cardEl(hits[i]));
+          rendered += hits.length; offset += hits.length;
+          emptyEl.hidden = !(curQ && rendered === 0);
+          if (curQ && rendered === 0) emptyEl.textContent = "No tenders match “" + curQ + "”. Try fewer or different words.";
+          syncSaved(); renderMeta(); renderMore();
+        })
+        .catch(function () { loading = false; if (my !== seq) return; if (metaEl) metaEl.textContent = "Search is unavailable right now."; });
+    }
+    function newSearch() {
+      curQ = input.value.trim(); offset = 0; rendered = 0; total = 0;
+      resultsUl.innerHTML = ""; moreWrap.innerHTML = ""; emptyEl.hidden = true;
+      writeURL();
+      var on = active();
+      setMode(on);
+      if (!on) { renderMeta(); return; }
+      fetchPage(false);
+    }
+
+    form.addEventListener("submit", function (e) { e.preventDefault(); newSearch(); });
+    if (catSel) catSel.addEventListener("change", newSearch);
+    if (sortSel) sortSel.addEventListener("change", newSearch);
+    if (deadlineSel) deadlineSel.addEventListener("change", newSearch);
+    if (hideClosed) hideClosed.addEventListener("change", newSearch);
+    var t; input.addEventListener("input", function () { clearTimeout(t); t = setTimeout(newSearch, 250); });
+
+    readURL();
+    var on0 = active();
+    setMode(on0);
+    if (on0) fetchPage(false); else { renderMeta(); if (!browseWrap) input.focus(); }
+  }
+
   function init() {
+    initSearch();
+    initSearchPage();
     initSavedChrome();
     initCards();
     initClosingAlert();

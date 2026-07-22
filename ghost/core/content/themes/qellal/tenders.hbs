@@ -1,10 +1,13 @@
 {{!< default}}
 
-{{!-- The /tenders/ channel (routes.yaml → filter tag:2merkato). A paginated
-      list of every tender; posts + {{pagination}} are at the root context.
-      The toolbar (sort / hide-closed) is enhanced client-side by tender.js. --}}
+{{!-- The /tenders/ channel (routes.yaml → filter tag:2merkato). It hosts BOTH:
+      • a global Meilisearch box (data-sp-*) — typing switches to search mode,
+        showing live results across every tender (initSearchPage in tender.js);
+      • the browse list (data-browse-wrap) — the server-paginated posts +
+        {{pagination}}, grouped/sorted client-side by tender.js.
+      Clearing the search box returns to browse. ?q= deep-links a search. --}}
 
-<section class="tender-list" data-tender-page>
+<section class="tender-list" data-tender-page data-search-page>
     <div data-closing-alert></div>
     <div class="tender-list-head">
         <div>
@@ -16,19 +19,59 @@
         <a class="link-more" href="{{@site.url}}">Home</a>
     </div>
 
-    {{> list-toolbar}}
+    <form class="search-page-field" data-sp-form role="search">
+        <svg class="search-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input type="search" class="search-page-input" data-sp-input placeholder="Search every tender by title, buyer or keyword…" aria-label="Search all tenders" autocomplete="off" spellcheck="false">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </form>
 
-    {{#if posts}}
-    <ul class="tender-cards" data-tender-list>
-        {{#foreach posts}}
-            <li>{{> tender-card}}</li>
-        {{/foreach}}
-    </ul>
-    {{else}}
-    <p style="color:var(--muted)">No tenders here yet.</p>
-    {{/if}}
+    {{!-- Search mode: Meilisearch results (hidden until there's a query). --}}
+    <div data-search-wrap hidden>
+        <div class="list-toolbar search-page-controls">
+            <label class="toolbar-field">
+                <span class="visually-hidden">Sort</span>
+                <select data-sp-sort aria-label="Sort results">
+                    <option value="relevance">Sort: Best match</option>
+                    <option value="deadline">Sort: Closing soon</option>
+                    <option value="newest">Sort: Newest</option>
+                </select>
+            </label>
+            <label class="toolbar-field">
+                <span class="visually-hidden">Category</span>
+                <select data-sp-cat aria-label="Filter by category"><option value="">All categories</option></select>
+            </label>
+            <label class="toolbar-field">
+                <span class="visually-hidden">Deadline</span>
+                <select data-sp-deadline aria-label="Filter by deadline">
+                    <option value="">Any deadline</option>
+                    <option value="7">Closing ≤ 7 days</option>
+                    <option value="30">Closing ≤ 30 days</option>
+                </select>
+            </label>
+            <label class="toolbar-check"><input type="checkbox" data-sp-hideclosed> Hide closed</label>
+            <p class="search-page-count" data-sp-meta></p>
+        </div>
+        <ul class="tender-cards" data-sp-results></ul>
+        <p class="list-empty" data-sp-empty hidden></p>
+        <div class="search-page-more" data-sp-more></div>
+    </div>
+
+    {{!-- Browse mode: the server-paginated channel list. --}}
+    <div data-browse-wrap>
+        {{> list-toolbar}}
+
+        {{#if posts}}
+        <ul class="tender-cards" data-tender-list>
+            {{#foreach posts}}
+                <li>{{> tender-card}}</li>
+            {{/foreach}}
+        </ul>
+        {{else}}
+        <p style="color:var(--muted)">No tenders here yet.</p>
+        {{/if}}
+
+        {{pagination}}
+    </div>
 </section>
-
-{{pagination}}
 
 {{> subscribe title="Never miss the next one" description="Get new tenders and deadline reminders by email — free."}}

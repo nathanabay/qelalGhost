@@ -1,0 +1,8 @@
+{{!< default}}
+
+{{!-- /search/ has been merged into /tenders/ (the channel now hosts the global
+      search). Redirect old links there, preserving any ?q= query. --}}
+<section class="tender-list">
+    <p style="color:var(--muted)">Redirecting to <a href="/tenders/">all tenders</a>…</p>
+</section>
+<script>(function () { try { location.replace("/tenders/" + (location.search || "") + (location.hash || "")); } catch (e) { location.href = "/tenders/"; } })();</script>

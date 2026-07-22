@@ -9,12 +9,6 @@
 
     <div class="detail-grid">
         <div class="detail-main">
-            {{#if tags}}
-            <div class="detail-chips">
-                {{#foreach tags}}<a class="chip" data-tag="{{slug}}" href="{{url}}">{{name}}</a>{{/foreach}}
-            </div>
-            {{/if}}
-
             <h1>{{title}}</h1>
 
             <section class="card-section">
@@ -25,6 +19,15 @@
                     </div>
                 </div>
             </section>
+
+            {{#if tags}}
+            <section class="detail-categories">
+                <h2 class="detail-categories-heading">Categories</h2>
+                <div class="detail-chips">
+                    {{#foreach tags}}<a class="chip" data-tag="{{slug}}" href="{{url}}">{{name}}</a>{{/foreach}}
+                </div>
+            </section>
+            {{/if}}
 
             {{#if canonical_url}}
             <section class="source-card">

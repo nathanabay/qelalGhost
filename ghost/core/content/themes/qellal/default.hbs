@@ -31,7 +31,7 @@
                     {{navigation}}
                 </nav>
                 <div class="nav-actions">
-                    <button class="icon-btn" type="button" data-ghost-search aria-label="Search tenders">
+                    <button class="icon-btn" type="button" data-tender-search aria-label="Search tenders">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
                     </button>
                     <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark">
@@ -110,6 +110,17 @@
         <div class="saved-drawer-body" data-saved-list></div>
     </aside>
 
+    {{> search-modal}}
+
+    {{!-- Meilisearch config for the tender search (search-only key is safe to expose). --}}
+    <script>
+        window.QELLAL_SEARCH = {
+            host: "{{@custom.meili_host}}",
+            index: "{{@custom.meili_index}}",
+            key: "{{@custom.meili_search_key}}"
+        };
+    </script>
+    <script src="{{asset "built/categories.js"}}"></script>
     <script src="{{asset "js/tender.js"}}"></script>
     {{ghost_foot}}
 </body>

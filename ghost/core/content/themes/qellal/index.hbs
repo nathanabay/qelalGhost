@@ -85,7 +85,10 @@
     {{/get}}
 
     {{#if @custom.show_category_browse}}
-    {{#get "tags" limit="12" filter="visibility:public+slug:-2merkato" include="count.posts" order="count.posts desc"}}
+    {{!-- Top sectors by tender count. Fast because posts_tags has a tag_id index
+          (see migration below); real categories (500–1,300 posts) dominate the
+          entity-* buyer tags (≤~170), so this naturally shows the sector list. --}}
+    {{#get "tags" limit="12" filter="visibility:public+slug:-2merkato+slug:-english+slug:-amharic" include="count.posts" order="count.posts desc"}}
         {{#if tags}}
         <section class="section" style="padding-bottom:0">
             <div class="section-head">

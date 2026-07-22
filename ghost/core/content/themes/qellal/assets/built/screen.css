@@ -109,6 +109,10 @@
 }
 
 * { box-sizing: border-box; }
+/* A class's `display` (e.g. .search-modal{display:flex}) otherwise beats the
+   browser's [hidden]{display:none}, leaving "hidden" elements visible. Make the
+   hidden attribute authoritative for every JS-toggled overlay/toolbar/drawer. */
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -266,6 +270,16 @@ button, [role="button"], a, label, select, summary { -webkit-tap-highlight-color
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .list-empty { margin: 1.5rem 0; color: var(--muted); font-size: .9rem; }
 .list-empty[hidden] { display: none; }
+.list-empty-msg { margin: 0 0 .85rem; }
+.list-empty-cta { display: inline-flex; }
+.search-page-field { display: flex; align-items: center; gap: .6rem; background: var(--surface); border: 1px solid var(--border); border-radius: .9rem; padding: .55rem .6rem .55rem .9rem; margin-bottom: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+.search-page-field .search-ic { width: 1.2rem; height: 1.2rem; color: var(--muted); flex-shrink: 0; }
+.search-page-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: 1.05rem; color: var(--ink); }
+.search-page-input::placeholder { color: var(--muted); }
+.search-page-controls { margin-bottom: 1.25rem; }
+.search-page-count { margin: 0 0 0 auto; font-size: .8rem; color: var(--muted); font-weight: 500; }
+.search-page-more { margin: 1.5rem 0; text-align: center; }
+.search-page .tender-card mark, .search-hit mark { background: var(--primary-soft); color: var(--primary); border-radius: 3px; padding: 0 .12em; font-weight: 600; }
 
 /* group band heading (inserted by JS) */
 .band { list-style: none; margin: 1.25rem 0 .25rem; }
@@ -296,7 +310,8 @@ button, [role="button"], a, label, select, summary { -webkit-tap-highlight-color
    as category chips on the tender detail (matches the source app). */
 .detail-chips a[data-tag="2merkato"],
 .detail-chips a[data-tag="english"],
-.detail-chips a[data-tag="amharic"] { display: none; }
+.detail-chips a[data-tag="amharic"],
+.detail-chips a[data-tag^="entity-"] { display: none; }
 
 /* ── Subscribe block (Ghost members signup) ─────────────── */
 .subscribe { max-width: 42rem; margin: 0 auto 4rem; padding: 0 1rem; }
@@ -336,6 +351,8 @@ button, [role="button"], a, label, select, summary { -webkit-tap-highlight-color
 .breadcrumb a:hover { color: var(--signal); }
 .detail-grid { margin-top: 1.25rem; display: grid; gap: 2rem; }
 .detail-chips { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.detail-categories { margin-top: 1.5rem; }
+.detail-categories-heading { margin: 0 0 .6rem; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
 .detail h1 { margin-top: .75rem; font-size: 1.875rem; font-weight: 700; line-height: 1.15; color: var(--ink); }
 .detail-byline { margin-top: .75rem; font-size: .875rem; color: var(--muted); }
 .detail-byline a { font-weight: 500; color: var(--signal); }
@@ -364,6 +381,8 @@ button, [role="button"], a, label, select, summary { -webkit-tap-highlight-color
 .deadline-facts .row { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
 .deadline-facts dt { flex-shrink: 0; text-transform: uppercase; letter-spacing: .03em; color: var(--panel-muted); margin: 0; }
 .deadline-facts dd { min-width: 0; overflow-wrap: anywhere; text-align: right; color: var(--panel-text); margin: 0; }
+.deadline-facts dd a { color: var(--panel-text); text-decoration: underline; text-underline-offset: 2px; }
+.deadline-facts dd a:hover { color: var(--urgent); }
 
 /* deadline actions (calendar / share) */
 .detail-actions { margin-top: 1rem; display: flex; flex-direction: column; gap: .5rem; }
@@ -440,7 +459,18 @@ button, [role="button"], a, label, select, summary { -webkit-tap-highlight-color
 }
 @media (min-width: 1024px) {
   .detail-grid { grid-template-columns: 1fr 320px; gap: 2rem; }
-  .detail-aside .deadline-card { position: sticky; top: 4.5rem; }
+  /* Stick the whole sidebar (deadline card + action buttons) together, so the
+     actions stay in view while the description scrolls. align-self:start stops
+     the grid column stretching to full row height (which would break sticky);
+     the max-height/scroll keeps everything reachable on short viewports. */
+  .detail-aside {
+    position: sticky;
+    top: 4.5rem;
+    align-self: start;
+    max-height: calc(100vh - 5.5rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
   .explore { grid-template-columns: repeat(4, 1fr); }
 }
 
@@ -566,3 +596,26 @@ button, [role="button"], a, label, select, summary { -webkit-tap-highlight-color
 
 /* Detail save-button pressed state */
 .btn[data-save-tender][aria-pressed="true"] { background: var(--signal); color: #fff; border-color: var(--signal); }
+
+/* ── Meilisearch modal ──────────────────────────────────── */
+.search-modal { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding: 4rem 1rem 1rem; }
+.search-overlay { position: fixed; inset: 0; background: rgba(23, 20, 13, .5); backdrop-filter: blur(2px); }
+.search-panel { position: relative; width: 100%; max-width: 40rem; background: var(--surface); border: 1px solid var(--border); border-radius: 1rem; box-shadow: var(--shadow-lift); overflow: hidden; }
+.search-field { display: flex; align-items: center; gap: .6rem; padding: .9rem 1rem; border-bottom: 1px solid var(--border); }
+.search-ic { width: 1.15rem; height: 1.15rem; color: var(--muted); flex-shrink: 0; }
+.search-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; font-size: 1rem; color: var(--ink); }
+.search-input::placeholder { color: var(--muted); }
+.search-esc { font-family: var(--font-mono); font-size: .7rem; color: var(--muted); border: 1px solid var(--border); border-radius: .35rem; padding: .1rem .4rem; }
+.search-results { max-height: min(60vh, 30rem); overflow-y: auto; overscroll-behavior: contain; }
+.search-hit { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "title badge" "meta badge" "snip snip"; gap: 0 .75rem; padding: .7rem 1rem; border-bottom: 1px solid var(--hairline); }
+.search-hit:hover, .search-hit.is-active { background: var(--primary-soft); }
+.search-hit-title { grid-area: title; font-weight: 600; color: var(--ink); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.search-hit-meta { grid-area: meta; font-size: .8rem; color: var(--muted); margin-top: .15rem; }
+.search-hit-badge { grid-area: badge; align-self: center; }
+.search-hit-snippet { grid-area: snip; font-size: .8rem; color: var(--muted); margin-top: .35rem; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.search-hit mark { background: var(--primary-soft); color: var(--primary); border-radius: 3px; padding: 0 .12em; font-weight: 600; }
+.search-more { display: block; width: 100%; text-align: center; padding: .7rem 1rem; border: 0; border-bottom: 1px solid var(--hairline); background: var(--canvas); color: var(--primary); font: inherit; font-weight: 600; cursor: pointer; }
+.search-more:hover { background: var(--primary-soft); }
+.search-empty { padding: 1.5rem 1rem; text-align: center; color: var(--muted); font-size: .9rem; }
+.search-foot { display: flex; align-items: center; justify-content: space-between; padding: .6rem 1rem; border-top: 1px solid var(--border); font-size: .72rem; color: var(--muted); background: var(--canvas); }
+.search-foot strong { color: var(--ink); font-weight: 600; }

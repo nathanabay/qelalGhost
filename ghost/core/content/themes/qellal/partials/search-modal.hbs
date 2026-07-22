@@ -1,0 +1,17 @@
+{{!-- Meilisearch overlay. Opened by [data-tender-search]; tender.js queries the
+      ghost_tenders index live and renders results linking to Ghost pages. --}}
+<div class="search-modal no-print" data-search-modal hidden aria-hidden="true">
+    <div class="search-overlay" data-search-overlay></div>
+    <div class="search-panel" role="dialog" aria-modal="true" aria-label="Search tenders">
+        <div class="search-field">
+            <svg class="search-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <input type="search" class="search-input" data-search-input placeholder="Search tenders by title, buyer or keyword…" aria-label="Search tenders" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="search-results-list" aria-autocomplete="list">
+            <kbd class="search-esc">Esc</kbd>
+        </div>
+        <div class="search-results" id="search-results-list" data-search-results role="listbox" aria-label="Search results"></div>
+        <div class="search-foot">
+            <span><span data-search-meta></span> <a class="search-all" data-search-all href="/search/" hidden>· See all results →</a></span>
+            <span>Search by <strong>Meilisearch</strong></span>
+        </div>
+    </div>
+</div>
