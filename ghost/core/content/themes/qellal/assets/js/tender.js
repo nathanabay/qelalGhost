@@ -365,7 +365,9 @@
         if (allCats.length) {
           // Full sector taxonomy → selecting one jumps to that sector's page
           // (server-paginated), so it works even for sectors not on this page.
-          allCats.forEach(function (c) { var o = document.createElement("option"); o.value = c.slug; o.textContent = c.name; catSel.appendChild(o); });
+          var slugToName = {};
+          allCats.forEach(function (c) { slugToName[c.slug] = c.name; var o = document.createElement("option"); o.value = c.slug; o.textContent = c.name; catSel.appendChild(o); });
+          applyFacetCounts(catSel, slugToName);
           var onTag = location.pathname.match(/^\/tag\/([^\/]+)\/?$/);
           if (onTag) catSel.value = onTag[1];
           catField.hidden = false;
@@ -798,6 +800,34 @@
     });
   }
 
+  // ── category facet counts (shared by browse + search dropdowns) ──────────
+  // One Meili query returns the tender count per category; we cache the promise
+  // and decorate each dropdown option's label with its "(1,904)" count.
+  var _facetPromise = null;
+  function categoryFacets() {
+    if (_facetPromise) return _facetPromise;
+    var cfg = window.QELLAL_SEARCH || {};
+    if (!cfg.host || !cfg.key || !cfg.index) { _facetPromise = Promise.resolve({}); return _facetPromise; }
+    var ep = cfg.host.replace(/\/+$/, "") + "/indexes/" + cfg.index + "/search";
+    _facetPromise = fetch(ep, { method: "POST", headers: { Authorization: "Bearer " + cfg.key, "Content-Type": "application/json" }, body: JSON.stringify({ q: "", limit: 0, facets: ["categories"] }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { return (d.facetDistribution && d.facetDistribution.categories) || {}; })
+      .catch(function () { return {}; });
+    return _facetPromise;
+  }
+  function applyFacetCounts(select, slugToName) {
+    if (!select) return;
+    categoryFacets().then(function (counts) {
+      var opts = select.options;
+      for (var i = 0; i < opts.length; i++) {
+        var slug = opts[i].value; if (!slug) continue;
+        var name = slugToName[slug]; if (!name) continue;
+        var c = counts[name];
+        if (c != null) opts[i].textContent = name + " (" + c.toLocaleString() + ")";
+      }
+    });
+  }
+
   // ── full-page tender search (/search/) ───────────────────
   function initSearchPage() {
     var root = document.querySelector("[data-search-page]");
@@ -841,6 +871,7 @@
     var cats = window.QELLAL_CATEGORIES || [], slugToName = {};
     if (catSel && cats.length) {
       cats.forEach(function (c) { slugToName[c.slug] = c.name; var o = document.createElement("option"); o.value = c.slug; o.textContent = c.name; catSel.appendChild(o); });
+      applyFacetCounts(catSel, slugToName);
     }
 
     function readURL() {

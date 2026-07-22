@@ -135,6 +135,9 @@ async function main() {
     searchableAttributes: ["*"],
     filterableAttributes: ["deadline_ts", "open_rank", "categories", "publishing_entity"],
     sortableAttributes: ["published_ts", "deadline_ts", "open_rank"],
+    // 175 category values > Meili's default facet cap of 100, so the theme's
+    // category dropdown can show a count for every sector.
+    faceting: { maxValuesPerFacet: 500 },
     synonyms: meiliSynonyms(),
   });
   await waitForTask(settings.taskUid);

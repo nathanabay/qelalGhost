@@ -1,0 +1,52 @@
+{{!< default}}
+
+{{!-- "Closing this week" smart page. Ghost serves this for the page with slug
+      "closing-this-week" (page-{slug}.hbs). It reuses the /tenders search engine
+      (initSearchPage) with Sort = Closing soon and Deadline = ≤ 7 days preset,
+      so it lands on a live, curated list of the most urgent open tenders.
+      There's no browse list here — results are always shown. --}}
+
+<section class="tender-list search-page closing-page" data-search-page>
+    <div class="tender-list-head">
+        <div>
+            <h2>📊 Closing this week</h2>
+            <p style="margin:.25rem 0 0;font-size:.875rem;color:var(--muted)" data-sp-meta>Tenders closing within the next 7 days.</p>
+        </div>
+        <a class="link-more" href="/tenders/">All tenders</a>
+    </div>
+
+    <form class="search-page-field" data-sp-form role="search">
+        <svg class="search-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+        <input type="search" class="search-page-input" data-sp-input placeholder="Search within tenders closing this week…" aria-label="Search closing tenders" autocomplete="off" spellcheck="false">
+        <button type="submit" class="btn btn-primary">Search</button>
+    </form>
+
+    <div class="list-toolbar search-page-controls">
+        <label class="toolbar-field">
+            <span class="visually-hidden">Sort</span>
+            <select data-sp-sort aria-label="Sort results">
+                <option value="relevance">Sort: Best match</option>
+                <option value="deadline" selected>Sort: Closing soon</option>
+                <option value="newest">Sort: Newest</option>
+            </select>
+        </label>
+        <label class="toolbar-field">
+            <span class="visually-hidden">Category</span>
+            <select data-sp-cat aria-label="Filter by category"><option value="">All categories</option></select>
+        </label>
+        <label class="toolbar-field">
+            <span class="visually-hidden">Deadline</span>
+            <select data-sp-deadline aria-label="Filter by deadline">
+                <option value="7" selected>Closing ≤ 7 days</option>
+                <option value="30">Closing ≤ 30 days</option>
+                <option value="">Any deadline</option>
+            </select>
+        </label>
+    </div>
+
+    <ul class="tender-cards" data-sp-results></ul>
+    <p class="list-empty" data-sp-empty hidden></p>
+    <div class="search-page-more" data-sp-more></div>
+</section>
+
+{{> subscribe title="Never miss a deadline" description="Get new tenders and deadline reminders by email — free."}}
