@@ -22,8 +22,8 @@ export function renderMiniApp(): string {
 }
 *{box-sizing:border-box}
 html{color-scheme:light}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--fb),system-ui,Arial,sans-serif;font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
-.wrap{max-width:640px;margin:0 auto;padding:0 14px 96px}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--fb),system-ui,Arial,sans-serif;font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:contain}
+.wrap{max-width:640px;margin:0 auto;padding:0 14px calc(96px + env(safe-area-inset-bottom))}
 header{position:sticky;top:0;background:var(--paper);padding:14px 0 6px;z-index:5}
 h1{font-family:var(--fh);font-size:1.25rem;margin:0 0 2px;font-weight:700;letter-spacing:-.02em}
 h2{font-family:var(--fh);letter-spacing:-.02em}
@@ -80,6 +80,9 @@ a{color:var(--ink);font-weight:600}
 <script>
 const tg = window.Telegram && window.Telegram.WebApp;
 try{ tg && tg.ready(); tg && tg.expand(); }catch(e){}
+// Stop Telegram's swipe-to-close gesture from hijacking the page scroll once
+// the user has scrolled down (Bot API 7.7+); harmless no-op on older clients.
+try{ tg.disableVerticalSwipes(); }catch(e){}
 try{ tg.setBackgroundColor('#F4F1EA'); tg.setHeaderColor('#17140D'); }catch(e){}
 const BASE = location.pathname.replace(/\\/+$/,'');
 const INIT = (tg && tg.initData) || "";
