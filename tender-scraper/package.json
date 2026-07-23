@@ -9,16 +9,21 @@
     "schedule": "tsx src/schedule.ts",
     "meili:index": "tsx src/meili-index.ts",
     "typecheck": "tsc --noEmit",
-    "migrate:supabase": "tsx src/migrate-from-supabase.ts"
+    "migrate:supabase": "tsx src/migrate-from-supabase.ts",
+    "notify:server": "tsx src/notify/server.ts",
+    "notify:daily": "tsx src/notify/daily.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
     "cheerio": "^1.0.0",
     "crawlee": "^3.11.5",
+    "mysql2": "^3.11.4",
+    "nodemailer": "^6.9.16",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^6.4.16",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2"
   }

@@ -7,3 +7,4 @@ storage/
 .ghost-prod-key
 .ghost-meili-search-key
 .ghost-*-key
+!.env.example

@@ -1,0 +1,210 @@
+// Notifier HTTP service. Fronted by Caddy at tenders.qelal.et/alerts/* (which
+// strips the /alerts prefix), so routes below are matched WITHOUT it.
+//
+//   Member API (ghost-members-ssr cookie): /api/subscriptions, /api/prefs, /api/telegram/link
+//   Webhooks (secret in path):             /telegram/webhook/<secret>, /ghost/webhook/<secret>
+//   Staff admin (ghost-admin cookie):      /admin/ + /admin/api/*   (/admin/sidebar.js is public)
+
+import http from "node:http";
+import crypto from "node:crypto";
+import { loadConfig, SETTING_KEYS } from "./config";
+import * as store from "./store";
+import { memberFromCookie, staffFromCookie } from "./auth";
+import { factsFromPost, matches } from "./match";
+import { formatNew } from "./format";
+import { deliver } from "./senders";
+import { sendTelegram, telegramGetMe, telegramSetWebhook } from "./senders/telegram";
+import { sendEmail, verifyEmail } from "./senders/email";
+import { renderAdminPage, ADMIN_SIDEBAR_JS } from "./admin-page";
+
+const PORT = Number(process.env.NOTIFY_PORT || 3839);
+
+function send(res: http.ServerResponse, code: number, body: unknown, type = "application/json") {
+  res.writeHead(code, { "Content-Type": type, "Cache-Control": "no-store" });
+  res.end(typeof body === "string" ? body : JSON.stringify(body));
+}
+function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve) => {
+    let b = "";
+    req.on("data", (c) => { b += c; if (b.length > 1e6) req.destroy(); });
+    req.on("end", () => { try { resolve(b ? JSON.parse(b) : {}); } catch { resolve({}); } });
+    req.on("error", () => resolve({}));
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url || "/", "http://localhost");
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    const cfg = await loadConfig();
+
+    // ── public: sidebar injector (adds the "Alerts" nav link in Ghost admin) ──
+    if (path === "/admin/sidebar.js") {
+      res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store" });
+      return res.end(ADMIN_SIDEBAR_JS);
+    }
+
+    // ── Telegram webhook ──
+    if (req.method === "POST" && path === `/telegram/webhook/${cfg.telegram.webhookSecret}` && cfg.telegram.webhookSecret) {
+      const upd = await readJson(req);
+      await handleTelegramUpdate(cfg, upd);
+      return send(res, 200, { ok: true });
+    }
+    // ── Ghost post.published webhook ──
+    if (req.method === "POST" && path === `/ghost/webhook/${cfg.ghostWebhookSecret}` && cfg.ghostWebhookSecret) {
+      const body = await readJson(req);
+      handleGhostPublished(cfg, body).catch((e) => console.error("[notify] ghost webhook:", e));
+      return send(res, 200, { ok: true }); // ack fast; fan-out async
+    }
+
+    // ── member API ──
+    if (path.startsWith("/api/")) return memberApi(req, res, cfg, path, url);
+
+    // ── staff admin ──
+    if (path === "/admin" || path === "/admin/") {
+      const staff = await staffFromCookie(req, cfg.ghostAdminUrl);
+      if (!staff) { res.writeHead(302, { Location: "/ghost/" }); return res.end(); }
+      return send(res, 200, renderAdminPage(), "text/html; charset=utf-8");
+    }
+    if (path.startsWith("/admin/api/")) return adminApi(req, res, cfg, path);
+
+    send(res, 404, { error: "not found" });
+  } catch (e) {
+    send(res, 500, { error: String((e as Error).message || e) });
+  }
+});
+server.listen(PORT, "0.0.0.0", () => console.log(`tender-notify on 0.0.0.0:${PORT}`));
+
+// ── member API ───────────────────────────────────────────────────────────────
+async function memberApi(req: http.IncomingMessage, res: http.ServerResponse, cfg: Awaited<ReturnType<typeof loadConfig>>, path: string, url: URL) {
+  const member = await memberFromCookie(req, cfg.ghostUrl);
+  if (!member) return send(res, 401, { error: "Sign in to manage alerts" });
+  await store.upsertSubscriber(member.uuid, member.email);
+
+  if (path === "/api/subscriptions" && req.method === "GET") {
+    const [alerts, sub] = await Promise.all([store.listAlerts(member.uuid), store.getSubscriber(member.uuid)]);
+    return send(res, 200, {
+      alerts,
+      telegram_linked: !!sub?.telegram_chat_id,
+      digest_mode: !!sub?.digest_mode,
+      paused_until: sub?.paused_until || null,
+      email: member.email,
+    });
+  }
+  if (path === "/api/subscriptions" && req.method === "POST") {
+    const b = await readJson(req);
+    const criteria = (b.criteria as store.Criteria) || {};
+    const channels = (b.channels as store.Channels) || { email: true, telegram: true };
+    const label = String(b.label || "All tenders").slice(0, 255);
+    const id = await store.createAlert(member.uuid, label, criteria, channels);
+    return send(res, 200, { ok: true, id });
+  }
+  if (path === "/api/subscriptions" && req.method === "DELETE") {
+    const id = Number(url.searchParams.get("id"));
+    if (id) await store.deleteAlert(member.uuid, id);
+    return send(res, 200, { ok: true });
+  }
+  if (path === "/api/prefs" && req.method === "POST") {
+    const b = await readJson(req);
+    const patch: { digest_mode?: boolean; paused_until?: Date | null } = {};
+    if (typeof b.digest_mode === "boolean") patch.digest_mode = b.digest_mode;
+    if (b.pause_days !== undefined) patch.paused_until = Number(b.pause_days) > 0 ? new Date(Date.now() + Number(b.pause_days) * 86400000) : null;
+    await store.setPrefs(member.uuid, patch);
+    return send(res, 200, { ok: true });
+  }
+  if (path === "/api/telegram/link" && req.method === "POST") {
+    if (!cfg.telegram.username) return send(res, 400, { error: "Telegram not configured" });
+    const token = crypto.randomUUID().replace(/-/g, "");
+    await store.setLinkToken(member.uuid, token);
+    return send(res, 200, { url: `https://t.me/${cfg.telegram.username}?start=${token}`, token });
+  }
+  send(res, 404, { error: "not found" });
+}
+
+// ── Telegram update handling ──────────────────────────────────────────────────
+async function handleTelegramUpdate(cfg: Awaited<ReturnType<typeof loadConfig>>, upd: Record<string, unknown>) {
+  const msg = (upd.message || upd.edited_message) as { text?: string; chat?: { id?: number } } | undefined;
+  const chatId = msg?.chat?.id;
+  const text = (msg?.text || "").trim();
+  if (!chatId) return;
+  const chat = String(chatId);
+  if (/^\/start\s+(\S+)/.test(text)) {
+    const token = text.match(/^\/start\s+(\S+)/)![1];
+    const sub = await store.bindTelegramByToken(token, chat);
+    await sendTelegram(cfg, chat, sub ? "✅ Linked! You'll get your Qellal tender alerts here. Send /stop to unlink." : "This link expired. Open the Alerts page on the site and tap “Link Telegram” again.").catch(() => {});
+  } else if (/^\/stop/.test(text)) {
+    await store.unlinkTelegramByChat(chat);
+    await sendTelegram(cfg, chat, "🔕 Unlinked. You won't get Telegram alerts anymore.").catch(() => {});
+  } else {
+    await sendTelegram(cfg, chat, "Open the Alerts page on tenders.qelal.et and tap “Link Telegram” to connect this chat.").catch(() => {});
+  }
+}
+
+// ── Ghost post.published → instant alerts ─────────────────────────────────────
+async function handleGhostPublished(cfg: Awaited<ReturnType<typeof loadConfig>>, body: Record<string, unknown>) {
+  const post = ((body.post as { current?: unknown })?.current) as Record<string, unknown> | undefined;
+  if (!post) return;
+  const facts = factsFromPost(post);
+  if (!facts) return;
+  const item = { title: facts.title, url: facts.url, deadline: facts.deadline, region: facts.region, publishing_entity: facts.publishing_entity };
+  const msg = formatNew(item, cfg.siteUrl);
+  const rows = await store.allAlerts();
+  for (const a of rows) {
+    if (a.subscriber.digest_mode) continue; // digest members get it in the daily digest
+    if (a.subscriber.paused_until && new Date(a.subscriber.paused_until).getTime() > Date.now()) continue;
+    if (!matches(facts, a.criteria, cfg.policy.includeClosed)) continue;
+    await deliver(cfg, a.subscriber, a.channels, msg, { kind: "new", tenderId: facts.id });
+  }
+}
+
+// ── staff admin API ───────────────────────────────────────────────────────────
+async function adminApi(req: http.IncomingMessage, res: http.ServerResponse, cfg: Awaited<ReturnType<typeof loadConfig>>, path: string) {
+  const staff = await staffFromCookie(req, cfg.ghostAdminUrl);
+  if (!staff) return send(res, 401, { error: "Sign in to Ghost admin" });
+
+  if (path === "/admin/api/settings" && req.method === "GET") {
+    const raw = await store.getSettings();
+    const out: Record<string, string> = {};
+    for (const k of SETTING_KEYS) out[k.key] = k.secret ? (raw[k.key] ? "••••" + raw[k.key].slice(-4) : "") : (raw[k.key] || "");
+    return send(res, 200, { settings: out, keys: SETTING_KEYS, webhookUrls: {
+      ghost: `${cfg.siteUrl}/alerts/ghost/webhook/${(await store.getSettings()).ghost_webhook_secret || "<set-secret>"}`,
+      telegram: `${cfg.siteUrl}/alerts/telegram/webhook/${(await store.getSettings()).telegram_webhook_secret || "<set-secret>"}`,
+    } });
+  }
+  if (path === "/admin/api/settings" && req.method === "POST") {
+    const b = await readJson(req);
+    const patch = (b.settings as Record<string, string>) || {};
+    for (const [k, v] of Object.entries(patch)) {
+      if (!SETTING_KEYS.some((s) => s.key === k)) continue;
+      if (v === "" || /^••••/.test(v)) continue; // blank / masked-unchanged → skip
+      await store.setSetting(k, v);
+    }
+    return send(res, 200, { ok: true });
+  }
+  if (path === "/admin/api/telegram/register" && req.method === "POST") {
+    const me = await telegramGetMe(cfg.telegram.token);
+    if (!me.ok) return send(res, 200, { ok: false, error: me.error });
+    if (me.username && !cfg.telegram.username) await store.setSetting("telegram_bot_username", me.username);
+    const hook = await telegramSetWebhook(cfg.telegram.token, `${cfg.siteUrl}/alerts/telegram/webhook/${cfg.telegram.webhookSecret}`, cfg.telegram.webhookSecret);
+    return send(res, 200, { ok: hook.ok, username: me.username, error: hook.error });
+  }
+  if (path === "/admin/api/test-telegram" && req.method === "POST") {
+    const b = await readJson(req);
+    try { await sendTelegram(cfg, String(b.chat_id), "✅ Qellal test alert — Telegram is working."); return send(res, 200, { ok: true }); }
+    catch (e) { return send(res, 200, { ok: false, error: (e as Error).message }); }
+  }
+  if (path === "/admin/api/test-email" && req.method === "POST") {
+    const b = await readJson(req);
+    const v = await verifyEmail(cfg);
+    if (!v.ok) return send(res, 200, { ok: false, error: v.error });
+    try { await sendEmail(cfg, String(b.to), "Qellal test alert", "<p>✅ Email alerts are working.</p>", "Email alerts are working."); return send(res, 200, { ok: true }); }
+    catch (e) { return send(res, 200, { ok: false, error: (e as Error).message }); }
+  }
+  if (path === "/admin/api/insights" && req.method === "GET") {
+    return send(res, 200, await store.insights());
+  }
+  send(res, 404, { error: "not found" });
+}
+
+// bootstrap the store on startup
+store.initStore().catch((e) => { console.error("store init failed:", e); process.exit(1); });
