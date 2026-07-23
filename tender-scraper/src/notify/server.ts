@@ -68,8 +68,13 @@ const server = http.createServer(async (req, res) => {
       return res.end(buildIcs(h.title, h.deadline, h.url));
     }
 
-    // ── Telegram webhook ──
-    if (req.method === "POST" && path === `/telegram/webhook/${cfg.telegram.webhookSecret}` && cfg.telegram.webhookSecret) {
+    // ── Telegram webhook ── (header-secret auth on the fixed path; the legacy
+    // secret-in-path route is kept so re-registration isn't a hard cutover)
+    const legacyTg = cfg.telegram.webhookSecret && path === `/telegram/webhook/${cfg.telegram.webhookSecret}`;
+    if (req.method === "POST" && (path === "/telegram/webhook" || legacyTg)) {
+      if (path === "/telegram/webhook" && (!cfg.telegram.webhookSecret || req.headers["x-telegram-bot-api-secret-token"] !== cfg.telegram.webhookSecret)) {
+        return send(res, 401, { error: "unauthorized" });
+      }
       const upd = await readJson(req);
       handleUpdate(cfg, upd).catch((e) => console.error("[notify] telegram:", e));
       return send(res, 200, { ok: true }); // ack fast
@@ -174,7 +179,7 @@ async function adminApi(req: http.IncomingMessage, res: http.ServerResponse, cfg
     for (const k of SETTING_KEYS) out[k.key] = k.secret ? (raw[k.key] ? "••••" + raw[k.key].slice(-4) : "") : (raw[k.key] || "");
     return send(res, 200, { settings: out, keys: SETTING_KEYS, webhookUrls: {
       ghost: `${cfg.siteUrl}/ghost/alerts/ghost/webhook/${(await store.getSettings()).ghost_webhook_secret || "<set-secret>"}`,
-      telegram: `${cfg.siteUrl}/ghost/alerts/telegram/webhook/${(await store.getSettings()).telegram_webhook_secret || "<set-secret>"}`,
+      telegram: `${cfg.siteUrl}/ghost/alerts/telegram/webhook`,
     } });
   }
   if (path === "/admin/api/settings" && req.method === "POST") {
@@ -191,7 +196,7 @@ async function adminApi(req: http.IncomingMessage, res: http.ServerResponse, cfg
     const me = await telegramGetMe(cfg.telegram.token);
     if (!me.ok) return send(res, 200, { ok: false, error: me.error });
     if (me.username && !cfg.telegram.username) await store.setSetting("telegram_bot_username", me.username);
-    const hook = await telegramSetWebhook(cfg.telegram.token, `${cfg.siteUrl}/ghost/alerts/telegram/webhook/${cfg.telegram.webhookSecret}`, cfg.telegram.webhookSecret);
+    const hook = await telegramSetWebhook(cfg.telegram.token, `${cfg.siteUrl}/ghost/alerts/telegram/webhook`, cfg.telegram.webhookSecret);
     await setBotCommands(cfg, BOT_COMMANDS); // publish the "/" command menu
     return send(res, 200, { ok: hook.ok, username: me.username, error: hook.error });
   }

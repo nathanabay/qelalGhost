@@ -14,6 +14,15 @@ export async function sendTelegram(cfg: Config, chatId: string, html: string, ke
   if (!r.ok) throw new Error(`telegram sendMessage ${r.status}: ${(await r.text()).slice(0, 160)}`);
 }
 
+// Edit an existing message in place (for inline-keyboard navigation).
+export async function editTelegram(cfg: Config, chatId: string, messageId: number, html: string, keyboard?: InlineKeyboard): Promise<void> {
+  const r = await fetch(api(cfg.telegram.token, "editMessageText"), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text: html, parse_mode: "HTML", disable_web_page_preview: true, ...(keyboard ? { reply_markup: keyboard } : {}) }),
+  });
+  if (!r.ok) throw new Error(`editMessageText ${r.status}`);
+}
+
 // Answer a callback query (stops the loading spinner; optional toast).
 export async function answerCallback(cfg: Config, id: string, text?: string): Promise<void> {
   await fetch(api(cfg.telegram.token, "answerCallbackQuery"), {
