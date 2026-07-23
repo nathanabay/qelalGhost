@@ -153,14 +153,15 @@ export async function facet(cfg: Config, field: string, limit = 24): Promise<{ v
 }
 
 // One tender by its id (slug). Requires `id` to be filterable on the index.
-export async function getById(cfg: Config, id: string): Promise<(MeiliHit & { categories?: string[] }) | null> {
+export type MeiliDoc = MeiliHit & { categories?: string[]; description?: string };
+export async function getById(cfg: Config, id: string): Promise<MeiliDoc | null> {
   if (!cfg.meiliHost || !cfg.meiliKey) return null;
   try {
     const r = await fetch(`${cfg.meiliHost}/indexes/${cfg.meiliIndex}/search`, {
       method: "POST", headers: { Authorization: `Bearer ${cfg.meiliKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ q: "", filter: `id = "${escFilter(id)}"`, limit: 1, attributesToRetrieve: ["id", "url", "title", "deadline", "deadline_ts", "publishing_entity", "region", "categories"] }),
+      body: JSON.stringify({ q: "", filter: `id = "${escFilter(id)}"`, limit: 1, attributesToRetrieve: ["id", "url", "title", "deadline", "deadline_ts", "publishing_entity", "region", "categories", "description"] }),
     });
-    const d = (await r.json()) as { hits?: (MeiliHit & { categories?: string[] })[] };
+    const d = (await r.json()) as { hits?: MeiliDoc[] };
     return d.hits?.[0] || null;
   } catch { return null; }
 }

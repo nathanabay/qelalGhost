@@ -17,6 +17,7 @@ import { sendTelegram, telegramGetMe, telegramSetWebhook, setBotCommands, setCha
 import { sendEmail, verifyEmail } from "./senders/email";
 import { renderAdminPage, ADMIN_SIDEBAR_JS } from "./admin-page";
 import { renderMiniApp } from "./app-page";
+import { buildTenderPdf } from "./pdf";
 import { handleUpdate, BOT_COMMANDS } from "./bot";
 import { validateInitData } from "./initdata";
 
@@ -74,6 +75,21 @@ const server = http.createServer(async (req, res) => {
       if (!h || !h.deadline) return send(res, 404, "no calendar for this tender", "text/plain");
       res.writeHead(200, { "Content-Type": "text/calendar; charset=utf-8", "Content-Disposition": 'attachment; filename="tender.ics"', "Cache-Control": "no-store" });
       return res.end(buildIcs(h.title, h.deadline, h.url));
+    }
+
+    // ── public: printable PDF of a tender (the app's "Download PDF") ──
+    if (path.startsWith("/pdf/")) {
+      const h = await getById(cfg, decodeURIComponent(path.slice(5)));
+      if (!h) return send(res, 404, "tender not found", "text/plain");
+      const meta: string[] = [];
+      if (h.deadline) meta.push("Submission deadline: " + h.deadline);
+      if (h.publishing_entity) meta.push("Publishing entity: " + h.publishing_entity);
+      if (h.region) meta.push("Region: " + h.region);
+      if (h.categories?.length) meta.push("Category: " + h.categories.join(", "));
+      const pdf = buildTenderPdf(h.title, meta, h.description || "", h.url);
+      const fname = (h.id || "tender").replace(/[^a-z0-9._-]/gi, "-").slice(0, 60) + ".pdf";
+      res.writeHead(200, { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${fname}"`, "Cache-Control": "no-store" });
+      return res.end(pdf);
     }
 
     // ── Telegram webhook ── (header-secret auth on the fixed path; the legacy
