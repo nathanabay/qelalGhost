@@ -504,6 +504,16 @@
           a.textContent = f.value;
           a.title = "See all tenders from " + f.value;
           dd.appendChild(a);
+        } else if (/website/i.test(f.label) && f.value) {
+          var w = document.createElement("a");
+          w.href = /^https?:\/\//i.test(f.value) ? f.value : "https://" + f.value;
+          w.target = "_blank"; w.rel = "noopener nofollow"; w.textContent = f.value;
+          dd.appendChild(w);
+        } else if (/phone/i.test(f.label) && f.value) {
+          var ph = document.createElement("a");
+          ph.href = "tel:" + f.value.replace(/[^0-9+]/g, "");
+          ph.textContent = f.value;
+          dd.appendChild(ph);
         } else {
           dd.textContent = f.value;
         }
@@ -511,6 +521,33 @@
       }
       if (any) dl.hidden = false;
       extracted.nodes.forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
+    }
+
+    // Documents card: 2merkato sometimes attaches downloadable files as a
+    // separate "Documents" list in the body — lift them into their own card.
+    var docSlot = root.querySelector("[data-documents-slot]");
+    var docBody = root.querySelector("[data-documents-body]");
+    if (docSlot && docBody && content) {
+      var docHead = null, docList = null, heads2 = content.querySelectorAll("h3");
+      for (var h = 0; h < heads2.length; h++) {
+        if (/^\s*documents\s*$/i.test(heads2[h].textContent || "")) { docHead = heads2[h]; docList = heads2[h].nextElementSibling; break; }
+      }
+      if (docHead && docList && docList.tagName === "UL") {
+        var links = docList.querySelectorAll("a[href]");
+        if (links.length) {
+          var dul = document.createElement("ul"); dul.className = "documents-list";
+          for (var k = 0; k < links.length; k++) {
+            var dli = document.createElement("li");
+            var da = document.createElement("a");
+            da.href = links[k].getAttribute("href"); da.target = "_blank"; da.rel = "noopener nofollow";
+            da.textContent = (links[k].textContent || "Document").trim();
+            dli.appendChild(da); dul.appendChild(dli);
+          }
+          docBody.appendChild(dul); docSlot.hidden = false;
+          if (docHead.parentNode) docHead.parentNode.removeChild(docHead);
+          if (docList.parentNode) docList.parentNode.removeChild(docList);
+        }
+      }
     }
 
     // actions
@@ -803,21 +840,21 @@
   // ── category facet counts (shared by browse + search dropdowns) ──────────
   // One Meili query returns the tender count per category; we cache the promise
   // and decorate each dropdown option's label with its "(1,904)" count.
-  var _facetPromise = null;
-  function categoryFacets() {
-    if (_facetPromise) return _facetPromise;
+  var _facetCache = {};
+  function facetCounts(field) {
+    if (_facetCache[field]) return _facetCache[field];
     var cfg = window.QELLAL_SEARCH || {};
-    if (!cfg.host || !cfg.key || !cfg.index) { _facetPromise = Promise.resolve({}); return _facetPromise; }
+    if (!cfg.host || !cfg.key || !cfg.index) { _facetCache[field] = Promise.resolve({}); return _facetCache[field]; }
     var ep = cfg.host.replace(/\/+$/, "") + "/indexes/" + cfg.index + "/search";
-    _facetPromise = fetch(ep, { method: "POST", headers: { Authorization: "Bearer " + cfg.key, "Content-Type": "application/json" }, body: JSON.stringify({ q: "", limit: 0, facets: ["categories"] }) })
+    _facetCache[field] = fetch(ep, { method: "POST", headers: { Authorization: "Bearer " + cfg.key, "Content-Type": "application/json" }, body: JSON.stringify({ q: "", limit: 0, facets: [field] }) })
       .then(function (r) { return r.json(); })
-      .then(function (d) { return (d.facetDistribution && d.facetDistribution.categories) || {}; })
+      .then(function (d) { return (d.facetDistribution && d.facetDistribution[field]) || {}; })
       .catch(function () { return {}; });
-    return _facetPromise;
+    return _facetCache[field];
   }
   function applyFacetCounts(select, slugToName) {
     if (!select) return;
-    categoryFacets().then(function (counts) {
+    facetCounts("categories").then(function (counts) {
       var opts = select.options;
       for (var i = 0; i < opts.length; i++) {
         var slug = opts[i].value; if (!slug) continue;
@@ -825,6 +862,25 @@
         var c = counts[name];
         if (c != null) opts[i].textContent = name + " (" + c.toLocaleString() + ")";
       }
+    });
+  }
+  // Region isn't in the static category list — build its dropdown from the live
+  // region facet (biggest first, with counts), then re-apply any URL selection.
+  function populateRegions(select, preselect) {
+    if (!select) return;
+    facetCounts("region").then(function (counts) {
+      var entries = Object.keys(counts).map(function (k) { return [k, counts[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
+      var total = entries.reduce(function (s, e) { return s + e[1]; }, 0);
+      // Region is populated for only a tiny fraction of tenders today, so a
+      // dropdown would mislead. Hide it unless coverage is meaningful — it will
+      // appear automatically once enough scraped tenders carry a region.
+      if (entries.length < 4 || total < 100) {
+        var field = select.closest ? select.closest(".toolbar-field") : null;
+        if (field) field.style.display = "none";
+        return;
+      }
+      entries.forEach(function (e) { var o = document.createElement("option"); o.value = e[0]; o.textContent = e[0] + " (" + e[1].toLocaleString() + ")"; select.appendChild(o); });
+      if (preselect) select.value = preselect;
     });
   }
 
@@ -836,6 +892,7 @@
     var form = root.querySelector("[data-sp-form]");
     var input = root.querySelector("[data-sp-input]");
     var catSel = root.querySelector("[data-sp-cat]");
+    var regionSel = root.querySelector("[data-sp-region]");
     var sortSel = root.querySelector("[data-sp-sort]");
     var deadlineSel = root.querySelector("[data-sp-deadline]");
     var hideClosed = root.querySelector("[data-sp-hideclosed]");
@@ -863,7 +920,7 @@
     var endpoint = cfg.host.replace(/\/+$/, "") + "/indexes/" + cfg.index + "/search";
     var PAGE = 20;
     var HL_PRE = "\u0001", HL_POST = "\u0002";
-    var seq = 0, offset = 0, total = 0, rendered = 0, loading = false, curQ = "";
+    var seq = 0, offset = 0, total = 0, rendered = 0, loading = false, curQ = "", curRegion = "";
 
     function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
     function hl(s) { return esc(s).split(HL_PRE).join("<mark>").split(HL_POST).join("</mark>"); }
@@ -879,6 +936,7 @@
       curQ = p.get("q") || "";
       input.value = curQ;
       if (catSel && p.get("cat")) catSel.value = p.get("cat");
+      curRegion = p.get("region") || "";
       if (sortSel && p.get("sort")) sortSel.value = p.get("sort");
       if (deadlineSel && p.get("deadline")) deadlineSel.value = p.get("deadline");
       if (hideClosed && p.get("closed") === "0") hideClosed.checked = true;
@@ -888,6 +946,7 @@
       if (curQ) p.set("q", curQ);
       if (sortSel && sortSel.value && sortSel.value !== "relevance") p.set("sort", sortSel.value);
       if (catSel && catSel.value) p.set("cat", catSel.value);
+      if (curRegion) p.set("region", curRegion);
       if (deadlineSel && deadlineSel.value) p.set("deadline", deadlineSel.value);
       if (hideClosed && hideClosed.checked) p.set("closed", "0");
       var qs = p.toString();
@@ -904,6 +963,7 @@
     function buildFilter() {
       var f = [];
       if (catSel && catSel.value && slugToName[catSel.value]) f.push('categories = "' + slugToName[catSel.value].replace(/"/g, '\\"') + '"');
+      if (curRegion) f.push('region = "' + curRegion.replace(/"/g, '\\"') + '"');
       if (hideClosed && hideClosed.checked) f.push("open_rank = 0");
       if (deadlineSel && deadlineSel.value) {
         var days = parseInt(deadlineSel.value, 10);
@@ -915,7 +975,7 @@
     // sort, or any filter. Drives whether we show Meili results or the browse list.
     function active() {
       return !!((curQ) || (sortSel && sortSel.value && sortSel.value !== "relevance") ||
-        (catSel && catSel.value) || (deadlineSel && deadlineSel.value) || (hideClosed && hideClosed.checked));
+        (catSel && catSel.value) || curRegion || (deadlineSel && deadlineSel.value) || (hideClosed && hideClosed.checked));
     }
     function cardEl(h) {
       var f = h._formatted || {};
@@ -998,20 +1058,79 @@
       writeURL();
       var on = active();
       setMode(on);
+      renderSS();
       if (!on) { renderMeta(); return; }
       fetchPage(false);
     }
 
+    // ── saved searches (localStorage, shares the saved-tenders idea) ──────
+    var SS_KEY = "qellal-saved-searches";
+    function currentParams() {
+      var p = {};
+      if (curQ) p.q = curQ;
+      if (sortSel && sortSel.value && sortSel.value !== "relevance") p.sort = sortSel.value;
+      if (catSel && catSel.value) p.cat = catSel.value;
+      if (curRegion) p.region = curRegion;
+      if (deadlineSel && deadlineSel.value) p.deadline = deadlineSel.value;
+      if (hideClosed && hideClosed.checked) p.closed = "0";
+      return p;
+    }
+    function labelFor(p) {
+      var b = [];
+      if (p.q) b.push('"' + p.q + '"');
+      if (p.cat && slugToName[p.cat]) b.push(slugToName[p.cat]);
+      if (p.region) b.push(p.region);
+      if (p.deadline) b.push("≤" + p.deadline + "d");
+      if (p.sort === "deadline") b.push("closing soon"); else if (p.sort === "newest") b.push("newest");
+      if (p.closed) b.push("open only");
+      return b.join(" · ") || "All tenders";
+    }
+    function applyParams(p) {
+      input.value = p.q || "";
+      if (sortSel) sortSel.value = p.sort || "relevance";
+      if (catSel) catSel.value = p.cat || "";
+      curRegion = p.region || ""; if (regionSel) regionSel.value = curRegion;
+      if (deadlineSel) deadlineSel.value = p.deadline || "";
+      if (hideClosed) hideClosed.checked = p.closed === "0";
+      newSearch();
+    }
+    var ssBar = document.createElement("div"); ssBar.className = "saved-searches"; ssBar.setAttribute("data-saved-searches", "");
+    if (form && form.parentNode) form.parentNode.insertBefore(ssBar, form.nextSibling);
+    function renderSS() {
+      ssBar.innerHTML = "";
+      loadSSList().forEach(function (item, idx) {
+        var chip = document.createElement("span"); chip.className = "ss-chip";
+        var go = document.createElement("button"); go.type = "button"; go.className = "ss-apply"; go.textContent = item.label;
+        go.addEventListener("click", function () { applyParams(item.params); });
+        var rm = document.createElement("button"); rm.type = "button"; rm.className = "ss-remove"; rm.setAttribute("aria-label", "Remove saved search"); rm.textContent = "×";
+        rm.addEventListener("click", function () { var l = loadSSList(); l.splice(idx, 1); lsSet(SS_KEY, l); renderSS(); });
+        chip.appendChild(go); chip.appendChild(rm); ssBar.appendChild(chip);
+      });
+      if (active()) {
+        var p = currentParams();
+        var dup = loadSSList().some(function (s) { return JSON.stringify(s.params) === JSON.stringify(p); });
+        if (!dup) {
+          var save = document.createElement("button"); save.type = "button"; save.className = "ss-save"; save.textContent = "☆ Save this search";
+          save.addEventListener("click", function () { var l = loadSSList(); l.unshift({ label: labelFor(p), params: p }); lsSet(SS_KEY, l.slice(0, 20)); renderSS(); });
+          ssBar.appendChild(save);
+        }
+      }
+    }
+    function loadSSList() { return lsGet(SS_KEY, []); }
+
     form.addEventListener("submit", function (e) { e.preventDefault(); newSearch(); });
     if (catSel) catSel.addEventListener("change", newSearch);
+    if (regionSel) regionSel.addEventListener("change", function () { curRegion = regionSel.value; newSearch(); });
     if (sortSel) sortSel.addEventListener("change", newSearch);
     if (deadlineSel) deadlineSel.addEventListener("change", newSearch);
     if (hideClosed) hideClosed.addEventListener("change", newSearch);
     var t; input.addEventListener("input", function () { clearTimeout(t); t = setTimeout(newSearch, 250); });
 
     readURL();
+    populateRegions(regionSel, curRegion);
     var on0 = active();
     setMode(on0);
+    renderSS();
     if (on0) fetchPage(false); else { renderMeta(); if (!browseWrap) input.focus(); }
   }
 

@@ -10,6 +10,12 @@
     <div class="detail-grid">
         <div class="detail-main">
             <h1>{{title}}</h1>
+            {{#has tag="featured,proforma"}}
+            <div class="detail-flags">
+                {{#has tag="featured"}}<span class="badge featured-badge">★ Featured</span>{{/has}}
+                {{#has tag="proforma"}}<span class="badge">Proforma</span>{{/has}}
+            </div>
+            {{/has}}
 
             <section class="card-section">
                 <h2>Description</h2>
@@ -18,6 +24,11 @@
                         {{content}}
                     </div>
                 </div>
+            </section>
+
+            <section class="card-section documents-card" data-documents-slot hidden>
+                <h2>Documents</h2>
+                <div class="card-body" data-documents-body></div>
             </section>
 
             {{#if tags}}

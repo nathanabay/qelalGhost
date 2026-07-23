@@ -9,6 +9,7 @@
     {{#if excerpt}}<p class="tender-card-meta">{{excerpt}}</p>{{/if}}
     <div class="tender-card-foot">
         <span>
+            {{#has tag="featured"}}<span class="chip chip-featured">★ Featured</span> {{/has}}
             {{#primary_tag}}<span class="chip">{{name}}</span> {{/primary_tag}}
             Published <span class="em">{{date format="D MMM YYYY"}}</span>
         </span>

@@ -278,6 +278,22 @@ button, [role="button"], a, label, select, summary { -webkit-tap-highlight-color
 .search-page-input::placeholder { color: var(--muted); }
 .search-page-controls { margin-bottom: 1.25rem; }
 .search-page-count { margin: 0 0 0 auto; font-size: .8rem; color: var(--muted); font-weight: 500; }
+.chip-featured, .chip[data-tag="featured"], .badge.featured-badge { background: var(--caution-bg); color: var(--caution); border-color: transparent; font-weight: 600; }
+.chip[data-tag="proforma"] { background: var(--primary-soft); color: var(--primary); border-color: transparent; }
+.detail-flags { display: flex; flex-wrap: wrap; gap: .5rem; margin: -.25rem 0 1.25rem; }
+.documents-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
+.documents-list li { margin: 0; }
+.documents-list a { color: var(--primary); font-weight: 500; word-break: break-word; }
+.documents-list a::before { content: "📄"; margin-right: .45rem; }
+.saved-searches { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0 0 1rem; }
+.saved-searches:empty { margin: 0; }
+.ss-chip { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); overflow: hidden; }
+.ss-apply { border: 0; background: transparent; font: inherit; font-size: .8rem; color: var(--ink); padding: .3rem .3rem .3rem .7rem; cursor: pointer; }
+.ss-apply:hover { color: var(--primary); }
+.ss-remove { border: 0; background: transparent; color: var(--muted); font-size: 1rem; line-height: 1; padding: .3rem .55rem .3rem .35rem; cursor: pointer; }
+.ss-remove:hover { color: var(--signal); }
+.ss-save { border: 1px dashed var(--border); border-radius: 999px; background: transparent; font: inherit; font-size: .8rem; font-weight: 600; color: var(--primary); padding: .3rem .8rem; cursor: pointer; }
+.ss-save:hover { background: var(--primary-soft); }
 .search-page-more { margin: 1.5rem 0; text-align: center; }
 .search-page .tender-card mark, .search-hit mark { background: var(--primary-soft); color: var(--primary); border-radius: 3px; padding: 0 .12em; font-weight: 600; }
 
