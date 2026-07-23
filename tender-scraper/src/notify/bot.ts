@@ -8,9 +8,10 @@
 import type { Config } from "./config";
 import * as store from "./store";
 import { queryMeili, todayStartTs, facet, getById, type MeiliHit } from "./match";
-import { sendTelegram, editTelegram, answerCallback, type InlineKeyboard } from "./senders/telegram";
+import { sendTelegram, editTelegram, answerCallback, answerInlineQuery, type InlineButton, type InlineKeyboard, type InlineResult } from "./senders/telegram";
 
 const PAGE = 5;
+let APP_URL = ""; // Mini App launch URL, set from cfg on the first update
 const esc = (s: string) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const c55 = (s: string) => s.slice(0, 55); // category/region names (ASCII) fit the 64-byte callback
 const lastQ = new Map<string, string>(); // last search per chat (avoids unsafe callback_data)
@@ -61,16 +62,18 @@ const T: Record<L, Record<string, string>> = {
 const trx = (l: L, k: string) => T[l]?.[k] ?? T.en[k] ?? k;
 
 function menuKeyboard(l: L): InlineKeyboard {
-  return { inline_keyboard: [
+  const rows: InlineButton[][] = [
     [{ text: trx(l, "search"), callback_data: "search" }, { text: trx(l, "closing"), callback_data: "closing" }],
     [{ text: trx(l, "latest"), callback_data: "latest" }, { text: trx(l, "sectors"), callback_data: "cats" }],
     [{ text: trx(l, "myalerts"), callback_data: "alerts" }, { text: trx(l, "saved"), callback_data: "saved" }],
     [{ text: trx(l, "settings"), callback_data: "settings" }, { text: trx(l, "help"), callback_data: "help" }],
-  ] };
+  ];
+  if (APP_URL) rows.unshift([{ text: "🚀 Open App", web_app: { url: APP_URL } }]);
+  return { inline_keyboard: rows };
 }
 function settingsKeyboard(sub: store.Subscriber | null): InlineKeyboard {
   const paused = sub?.paused_until && new Date(sub.paused_until).getTime() > Date.now();
-  const freq = sub?.digest_freq || (sub?.digest_mode ? "daily" : "instant");
+  const freq = store.effectiveFreq(sub);
   return { inline_keyboard: [
     [{ text: `📬 Delivery: ${freq}`, callback_data: "freq" }],
     [paused ? { text: "▶️ Resume", callback_data: "resume" } : { text: "⏸ Pause 7d", callback_data: "pause" }, { text: "🔇 Mute 24h", callback_data: "mute" }],
@@ -196,7 +199,7 @@ async function statusText(sub: store.Subscriber | null): Promise<string> {
   if (!sub) return "This chat isn't linked. Open My alerts on the site and tap “Link Telegram”.";
   const alerts = await store.listAlerts(sub.member_uuid), saved = await store.listSaved(sub.member_uuid);
   const paused = sub.paused_until && new Date(sub.paused_until).getTime() > Date.now();
-  return `📊 <b>Your status</b>\n\n• Alerts: <b>${alerts.length}</b> · Saved: <b>${saved.length}</b>\n• Delivery: <b>${sub.digest_freq || (sub.digest_mode ? "daily" : "instant")}</b>\n• ${paused ? `Paused until ${new Date(sub.paused_until as string).toLocaleDateString()}` : "Active"}\n• Email: ${esc(sub.email || "—")}`;
+  return `📊 <b>Your status</b>\n\n• Alerts: <b>${alerts.length}</b> · Saved: <b>${saved.length}</b>\n• Delivery: <b>${store.effectiveFreq(sub)}</b>\n• ${paused ? `Paused until ${new Date(sub.paused_until as string).toLocaleDateString()}` : "Active"}\n• Email: ${esc(sub.email || "—")}`;
 }
 async function setPause(cfg: Config, chat: string, r: Reply, days: number) {
   const sub = await store.getSubscriberByChat(chat);
@@ -208,7 +211,7 @@ async function cycleFreq(cfg: Config, chat: string, r: Reply) {
   const sub = await store.getSubscriberByChat(chat);
   if (!sub) return void r("Link this chat first.");
   const order = ["instant", "daily", "weekly"];
-  const next = order[(order.indexOf(sub.digest_freq || (sub.digest_mode ? "daily" : "instant")) + 1) % order.length];
+  const next = order[(order.indexOf(store.effectiveFreq(sub)) + 1) % order.length];
   await store.setDigestFreq(sub.member_uuid, next);
   await store.setPrefs(sub.member_uuid, { digest_mode: next !== "instant" });
   await r(`📬 Delivery set to <b>${next}</b>.`, settingsKeyboard(await store.getSubscriberByChat(chat)));
@@ -220,6 +223,14 @@ async function toggleLang(cfg: Config, chat: string, r: Reply) {
   await r(next === "am" ? "🌐 ቋንቋ ወደ አማርኛ ተቀይሯል።" : "🌐 Language set to English.", menuKeyboard(next));
 }
 
+// Shown to anyone who hasn't linked a Ghost account — the bot is members-only.
+function linkPrompt(cfg: Config): { text: string; kb: InlineKeyboard } {
+  return {
+    text: "🔒 <b>Link your Qellal account first</b>\n\nThis bot is for signed-in Qellal members. Open your alerts page, sign in, then tap “Link Telegram”. Come back here once it's linked.",
+    kb: { inline_keyboard: [[{ text: "🔗 Link my account", url: `${cfg.siteUrl}/my-alerts/` }]] },
+  };
+}
+
 const WELCOME = (linked: boolean) =>
   `👋 <b>Qellal tender alerts</b>\n\nSearch every Ethiopian tender, browse by sector/region, and get pinged when new tenders match you.\n\n• <b>Type a keyword</b> to search (e.g. <i>electrical</i>)\n• /closing · /latest · /categories · /trending\n• /alerts · /saved\n\n${linked ? "✅ This chat is linked." : "🔗 Link from tenders.qelal.et/my-alerts to save alerts."}`;
 const HELP =
@@ -227,6 +238,9 @@ const HELP =
 
 // ── entry ────────────────────────────────────────────────────────────────────
 export async function handleUpdate(cfg: Config, upd: Record<string, unknown>): Promise<void> {
+  if (!APP_URL) APP_URL = `${cfg.siteUrl}/ghost/alerts/app/`;
+  const iq = upd.inline_query as { id: string; query?: string; from?: { id?: number } } | undefined;
+  if (iq) return handleInline(cfg, iq);
   const cq = upd.callback_query as { id: string; data?: string; message?: { chat?: { id?: number }; message_id?: number } } | undefined;
   if (cq) return handleCallback(cfg, cq);
   const msg = (upd.message || upd.edited_message) as { text?: string; chat?: { id?: number } } | undefined;
@@ -243,9 +257,19 @@ export async function handleUpdate(cfg: Config, upd: Record<string, unknown>): P
   if (cmd.startsWith("/")) store.bumpEvent(cmd.replace(/^\//, "").replace(/@.*/, "")).catch(() => {});
 
   if (/^\/start/.test(cmd)) {
+    // Deep link from an inline-mode "💾 Save" button: t.me/<bot>?start=save_<id>
+    if (arg.startsWith("save_")) {
+      if (!sub) { const p = linkPrompt(cfg); return void r(p.text, p.kb); }
+      const id = arg.slice(5);
+      const h = await getById(cfg, id);
+      if (h) { await store.saveTender(sub.member_uuid, { tender_id: h.id, url: h.url, title: h.title, deadline: h.deadline }); return void tenderCard(cfg, chat, l, r, id); }
+    }
     if (arg && !arg.startsWith("ref")) { const s = await store.bindTelegramByToken(arg, chat); if (s) return void r("✅ <b>Linked!</b> You'll get your tender alerts here.", menuKeyboard(l)); }
-    return void r(WELCOME(!!sub), menuKeyboard(l));
+    if (!sub) { const p = linkPrompt(cfg); return void r(p.text, p.kb); } // members-only
+    return void r(WELCOME(true), menuKeyboard(l));
   }
+  // Members-only: every command/search below requires a linked Ghost account.
+  if (!sub && !/^\/help$/.test(cmd)) { const p = linkPrompt(cfg); return void r(p.text, p.kb); }
   if (/^\/menu$/.test(cmd)) return void r(trx(l, "menuq"), menuKeyboard(l));
   if (/^\/help$/.test(cmd)) return void r(HELP, menuKeyboard(l));
   if (/^\/search$/.test(cmd)) return void (arg ? search(cfg, chat, l, r, arg) : r("Send a keyword, e.g. <code>/search electrical</code> — or just type it."));
@@ -271,6 +295,47 @@ export async function handleUpdate(cfg: Config, upd: Record<string, unknown>): P
   if (text) return void search(cfg, chat, l, r, text);
 }
 
+// Inline mode: `@qelalbot <query>` in any chat → up to 15 tender articles.
+// Stateless public search (no per-user data), so no initData/subscriber lookup.
+async function handleInline(cfg: Config, iq: { id: string; query?: string; from?: { id?: number } }): Promise<void> {
+  const uid = String(iq.from?.id || "anon");
+  if (limited("iq:" + uid)) return void answerInlineQuery(cfg, iq.id, []);
+  // Members-only: an unlinked user gets a single "link your account" article.
+  const sub = await store.getSubscriberByChat(uid);
+  if (!sub) {
+    return void answerInlineQuery(cfg, iq.id, [{
+      type: "article", id: "link", title: "🔒 Link your Qellal account",
+      description: "Tap to link, then search tenders from any chat",
+      input_message_content: { message_text: `Link your Qellal account to search tenders here: ${cfg.siteUrl}/my-alerts/` },
+    }], { cache_time: 5, is_personal: true });
+  }
+  const q = (iq.query || "").trim();
+  const hits = q
+    ? await queryMeili(cfg, { q }, { limit: 15 })
+    : await queryMeili(cfg, {}, { sort: ["published_ts:desc"], limit: 15 });
+  const results: InlineResult[] = hits.map((h) => {
+    const meta = metaOf(h);
+    const text = `🔔 <b>${esc(h.title)}</b>${meta ? `\n${esc(meta)}` : ""}\n${esc(h.url)}`;
+    const save = cfg.telegram.username ? `https://t.me/${cfg.telegram.username}?start=save_${h.id}` : h.url;
+    return {
+      type: "article",
+      id: h.id.slice(0, 64),
+      title: h.title.slice(0, 100),
+      description: meta || undefined,
+      input_message_content: { message_text: text, parse_mode: "HTML", disable_web_page_preview: false },
+      reply_markup: { inline_keyboard: [[{ text: "🌐 Open", url: h.url }, { text: "💾 Save", url: save }]] },
+    };
+  });
+  if (!results.length) {
+    results.push({
+      type: "article", id: "none", title: "No tenders found",
+      description: q ? `Nothing matched “${q.slice(0, 40)}”` : "Try a keyword",
+      input_message_content: { message_text: "No tenders matched that search. Browse all at tenders.qelal.et" },
+    });
+  }
+  await answerInlineQuery(cfg, iq.id, results, { cache_time: 30, is_personal: true });
+}
+
 async function randomTender(cfg: Config, chat: string, l: L, r: Reply) {
   let hit = (await queryMeili(cfg, {}, { limit: 1, offset: Math.floor(Math.random() * 300), sort: ["published_ts:desc"] }))[0];
   if (!hit) hit = (await queryMeili(cfg, {}, { limit: 1, offset: 0, sort: ["published_ts:desc"] }))[0];
@@ -293,6 +358,7 @@ async function handleCallback(cfg: Config, cq: { id: string; data?: string; mess
     ? (t, kb) => editTelegram(cfg, chat, msgId, t, kb).catch(() => sendTelegram(cfg, chat, t, kb).catch(() => {}))
     : (t, kb) => sendTelegram(cfg, chat, t, kb).catch(() => {});
   store.bumpEvent("cb:" + data.split(":")[0]).catch(() => {});
+  if (!sub) { const p = linkPrompt(cfg); return void r(p.text, p.kb); } // members-only
 
   if (data === "menu") return void r(trx(l, "menuq"), menuKeyboard(l));
   if (data === "help") return void r(HELP, menuKeyboard(l));

@@ -74,6 +74,23 @@ export async function initStore(): Promise<void> {
     "ALTER TABLE subscribers ADD COLUMN digest_freq TEXT DEFAULT 'daily'",
     "ALTER TABLE alerts ADD COLUMN snoozed_until TEXT",
   ]) { try { db!.exec(sql); } catch { /* already exists */ } }
+
+  // One Telegram chat must map to exactly one subscriber row. Older data (before
+  // the Mini App's anonymous `tg:<id>` rows) could hold duplicate chat ids, and
+  // a plain UNIQUE index would fail to build over them — so dedupe first,
+  // keeping the linked Ghost account over an anonymous `tg:` row, then newest.
+  try {
+    const dupes = db!.prepare(
+      "SELECT telegram_chat_id c FROM subscribers WHERE telegram_chat_id IS NOT NULL GROUP BY telegram_chat_id HAVING COUNT(*) > 1",
+    ).all() as { c: string }[];
+    for (const { c } of dupes) {
+      const rows = db!.prepare(
+        "SELECT member_uuid FROM subscribers WHERE telegram_chat_id = ? ORDER BY (member_uuid LIKE 'tg:%'), created_at DESC",
+      ).all(c) as { member_uuid: string }[];
+      for (const r of rows.slice(1)) db!.prepare("UPDATE subscribers SET telegram_chat_id = NULL WHERE member_uuid = ?").run(r.member_uuid);
+    }
+    db!.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_sub_chat ON subscribers(telegram_chat_id)");
+  } catch (e) { console.error("[store] chat-id unique index:", (e as Error).message); }
 }
 function d(): Database.Database {
   if (!db) throw new Error("store not initialised — call initStore() first");
@@ -100,7 +117,11 @@ export async function getSubscriber(uuid: string): Promise<Subscriber | null> {
   return (d().prepare("SELECT * FROM subscribers WHERE member_uuid = ?").get(uuid) as Subscriber) || null;
 }
 export async function getSubscriberByChat(chatId: string): Promise<Subscriber | null> {
-  return (d().prepare("SELECT * FROM subscribers WHERE telegram_chat_id = ?").get(chatId) as Subscriber) || null;
+  // Deterministic even if a stray duplicate slipped in: prefer the linked Ghost
+  // account over an anonymous `tg:` row, then the most recently created.
+  return (d().prepare(
+    "SELECT * FROM subscribers WHERE telegram_chat_id = ? ORDER BY (member_uuid LIKE 'tg:%'), created_at DESC LIMIT 1",
+  ).get(chatId) as Subscriber) || null;
 }
 export async function setLinkToken(uuid: string, token: string): Promise<void> {
   d().prepare("UPDATE subscribers SET telegram_link_token = ? WHERE member_uuid = ?").run(token, uuid);
@@ -108,8 +129,27 @@ export async function setLinkToken(uuid: string, token: string): Promise<void> {
 export async function bindTelegramByToken(token: string, chatId: string): Promise<Subscriber | null> {
   const row = d().prepare("SELECT member_uuid FROM subscribers WHERE telegram_link_token = ?").get(token) as { member_uuid: string } | undefined;
   if (!row) return null;
-  d().prepare("UPDATE subscribers SET telegram_chat_id = ?, telegram_link_token = NULL WHERE member_uuid = ?").run(chatId, row.member_uuid);
-  return getSubscriber(row.member_uuid);
+  const target = row.member_uuid;
+  const db = d();
+  // Do the merge + rebind atomically so the UNIQUE(telegram_chat_id) index
+  // never sees two rows claiming the same chat at once.
+  const tx = db.transaction(() => {
+    // Any *other* row currently holding this chat: migrate its data into the
+    // linked Ghost account (so an anonymous Mini App `tg:<id>` user keeps their
+    // alerts/saved/feedback), then remove or unlink it.
+    const others = db.prepare("SELECT member_uuid FROM subscribers WHERE telegram_chat_id = ? AND member_uuid <> ?").all(chatId, target) as { member_uuid: string }[];
+    for (const o of others) {
+      const from = o.member_uuid;
+      db.prepare("UPDATE OR IGNORE alerts SET member_uuid = ? WHERE member_uuid = ?").run(target, from);
+      db.prepare("UPDATE OR IGNORE saved_tenders SET member_uuid = ? WHERE member_uuid = ?").run(target, from);
+      db.prepare("UPDATE feedback SET member_uuid = ? WHERE member_uuid = ?").run(target, from);
+      if (from.startsWith("tg:")) db.prepare("DELETE FROM subscribers WHERE member_uuid = ?").run(from);
+      else db.prepare("UPDATE subscribers SET telegram_chat_id = NULL WHERE member_uuid = ?").run(from);
+    }
+    db.prepare("UPDATE subscribers SET telegram_chat_id = ?, telegram_link_token = NULL WHERE member_uuid = ?").run(chatId, target);
+  });
+  tx();
+  return getSubscriber(target);
 }
 export async function unlinkTelegramByChat(chatId: string): Promise<void> {
   d().prepare("UPDATE subscribers SET telegram_chat_id = NULL WHERE telegram_chat_id = ?").run(chatId);
@@ -167,6 +207,14 @@ export async function setLang(uuid: string, lang: string): Promise<void> {
 }
 export async function setDigestFreq(uuid: string, freq: string): Promise<void> {
   d().prepare("UPDATE subscribers SET digest_freq = ? WHERE member_uuid = ?").run(freq, uuid);
+}
+// Single source of truth for delivery cadence. `digest_mode` is authoritative
+// for the instant/batch split (the instant webhook path gates on it), so a stale
+// column-default digest_freq='daily' on a digest_mode=0 row still reads as
+// "instant" — avoiding double delivery (instant + digest).
+export function effectiveFreq(sub: Pick<Subscriber, "digest_mode" | "digest_freq"> | null): string {
+  if (!sub || !sub.digest_mode) return "instant";
+  return sub.digest_freq && sub.digest_freq !== "instant" ? sub.digest_freq : "daily";
 }
 export async function setAlertChannels(uuid: string, id: number, channels: Channels): Promise<void> {
   d().prepare("UPDATE alerts SET channels_json = ? WHERE id = ? AND member_uuid = ?").run(JSON.stringify(channels), id, uuid);

@@ -25,11 +25,14 @@ export async function deliver(
   channels: Channels,
   msg: Msg,
   meta: SendMeta,
+  opts: { ignoreQuietHours?: boolean } = {},
 ): Promise<string[]> {
   const sent: string[] = [];
   if (cfg.policy.globalPause) return sent;
   if (sub.paused_until && new Date(sub.paused_until).getTime() > Date.now()) return sent;
-  if (inQuietHours(cfg)) return sent;
+  // Instant sends respect quiet hours; batch/daily deliveries (the designated
+  // delivery window) pass ignoreQuietHours so nothing is silently dropped.
+  if (!opts.ignoreQuietHours && inQuietHours(cfg)) return sent;
   if ((await sentCountToday(sub.member_uuid)) >= cfg.policy.dailyCap) return sent;
 
   async function via(channel: string, ok: boolean, fn: () => Promise<void>) {

@@ -10,13 +10,15 @@ import crypto from "node:crypto";
 import { loadConfig, SETTING_KEYS } from "./config";
 import * as store from "./store";
 import { memberFromCookie, staffFromCookie } from "./auth";
-import { factsFromPost, matches, getById } from "./match";
+import { factsFromPost, matches, getById, queryMeili, facet } from "./match";
 import { formatNew } from "./format";
 import { deliver } from "./senders";
-import { sendTelegram, telegramGetMe, telegramSetWebhook, setBotCommands } from "./senders/telegram";
+import { sendTelegram, telegramGetMe, telegramSetWebhook, setBotCommands, setChatMenuButton } from "./senders/telegram";
 import { sendEmail, verifyEmail } from "./senders/email";
 import { renderAdminPage, ADMIN_SIDEBAR_JS } from "./admin-page";
+import { renderMiniApp } from "./app-page";
 import { handleUpdate, BOT_COMMANDS } from "./bot";
+import { validateInitData } from "./initdata";
 
 const PORT = Number(process.env.NOTIFY_PORT || 3839);
 
@@ -36,6 +38,12 @@ function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
     req.on("end", () => { try { resolve(b ? JSON.parse(b) : {}); } catch { resolve({}); } });
     req.on("error", () => resolve({}));
   });
+}
+
+// Mirror bot.ts's slugify so a category NAME maps to the same tag slug the
+// instant matcher compares against.
+function slugify(s: string): string {
+  return s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
 
 function buildIcs(title: string, deadline: string, url: string): string {
@@ -85,6 +93,12 @@ const server = http.createServer(async (req, res) => {
       handleGhostPublished(cfg, body).catch((e) => console.error("[notify] ghost webhook:", e));
       return send(res, 200, { ok: true }); // ack fast; fan-out async
     }
+
+    // ── Mini App (Telegram WebApp) ──
+    if (path === "/app" || path === "/app/") {
+      return send(res, 200, renderMiniApp(), "text/html; charset=utf-8");
+    }
+    if (path.startsWith("/app/api/")) return appApi(req, res, cfg, path, url);
 
     // ── member API ──
     if (path.startsWith("/api/")) return memberApi(req, res, cfg, path, url);
@@ -150,6 +164,105 @@ async function memberApi(req: http.IncomingMessage, res: http.ServerResponse, cf
   send(res, 404, { error: "not found" });
 }
 
+// ── Mini App API (Telegram initData auth, no cookies) ─────────────────────────
+async function appApi(req: http.IncomingMessage, res: http.ServerResponse, cfg: Awaited<ReturnType<typeof loadConfig>>, path: string, url: URL) {
+  const initData = req.headers["x-telegram-init-data"];
+  const v = typeof initData === "string" ? validateInitData(cfg.telegram.token, initData) : null;
+  if (!v) return send(res, 401, { error: "unauthorized" });
+
+  // Members-only: the app requires a linked Ghost account (private chat →
+  // chat.id === user.id, so the bot and app agree on the id). No anonymous rows.
+  const chatId = v.userId;
+  const sub = await store.getSubscriberByChat(chatId);
+  const user = { id: v.user.id, name: [v.user.first_name, v.user.last_name].filter(Boolean).join(" "), username: v.user.username || null };
+
+  if (path === "/app/api/init" && req.method === "GET") {
+    if (!sub) return send(res, 200, { linked: false, user, linkUrl: `${cfg.siteUrl}/my-alerts/` });
+    const uuid = sub.member_uuid;
+    const [alerts, saved, cats, regions] = await Promise.all([
+      store.listAlerts(uuid), store.listSaved(uuid), facet(cfg, "categories", 40), facet(cfg, "region", 20),
+    ]);
+    return send(res, 200, {
+      user,
+      linked: true,
+      email: sub.email,
+      digest_freq: store.effectiveFreq(sub),
+      paused_until: sub.paused_until || null,
+      lang: sub.lang || "en",
+      alerts, saved, categories: cats, regions,
+    });
+  }
+
+  // All other endpoints are members-only.
+  if (!sub) return send(res, 403, { error: "link_required", linkUrl: `${cfg.siteUrl}/my-alerts/` });
+  const uuid = sub.member_uuid;
+  if (path === "/app/api/search" && req.method === "GET") {
+    const c: store.Criteria & { catName?: string } = {
+      q: url.searchParams.get("q") || undefined,
+      catName: url.searchParams.get("catName") || undefined,
+      region: url.searchParams.get("region") || undefined,
+      deadline: url.searchParams.get("deadline") || undefined,
+    };
+    const sort = url.searchParams.get("sort");
+    const offset = Number(url.searchParams.get("offset") || 0);
+    const hits = await queryMeili(cfg, c, { limit: 20, offset, sort: sort ? sort.split(",") : undefined });
+    return send(res, 200, { hits });
+  }
+  if (path === "/app/api/tender" && req.method === "GET") {
+    return send(res, 200, { tender: await getById(cfg, url.searchParams.get("id") || "") });
+  }
+  if (path === "/app/api/alert" && req.method === "POST") {
+    const b = await readJson(req);
+    const criteria = (b.criteria as store.Criteria) || {};
+    // A category filter carries the display name; derive the slug too so the
+    // instant-match path (matches() filters on `cat`) works, not just digests.
+    if (criteria.catName && !criteria.cat) criteria.cat = slugify(criteria.catName);
+    const label = String(b.label || "Alert").slice(0, 255);
+    const channels = (b.channels as store.Channels) || { email: true, telegram: true };
+    const id = await store.createAlert(uuid, label, criteria, channels);
+    return send(res, 200, { ok: true, id });
+  }
+  if (path === "/app/api/alert" && req.method === "DELETE") {
+    const id = Number(url.searchParams.get("id"));
+    if (id) await store.deleteAlert(uuid, id);
+    return send(res, 200, { ok: true });
+  }
+  if (path === "/app/api/alert/snooze" && req.method === "POST") {
+    const b = await readJson(req);
+    const id = Number(b.id), days = Number(b.days || 0);
+    if (id) await store.snoozeAlert(uuid, id, days > 0 ? new Date(Date.now() + days * 86400000) : null);
+    return send(res, 200, { ok: true });
+  }
+  if (path === "/app/api/alert/channels" && req.method === "POST") {
+    const b = await readJson(req);
+    const id = Number(b.id);
+    if (id) await store.setAlertChannels(uuid, id, (b.channels as store.Channels) || {});
+    return send(res, 200, { ok: true });
+  }
+  if (path === "/app/api/save" && req.method === "POST") {
+    const b = await readJson(req);
+    const t = b.tender as { tender_id: string; url?: string; title?: string; deadline?: string | null } | undefined;
+    if (t?.tender_id) await store.saveTender(uuid, t);
+    return send(res, 200, { ok: true });
+  }
+  if (path === "/app/api/save" && req.method === "DELETE") {
+    const id = url.searchParams.get("id");
+    if (id) await store.unsaveTender(uuid, id);
+    return send(res, 200, { ok: true });
+  }
+  if (path === "/app/api/prefs" && req.method === "POST") {
+    const b = await readJson(req);
+    if (typeof b.freq === "string" && ["instant", "daily", "weekly"].includes(b.freq)) {
+      await store.setDigestFreq(uuid, b.freq);
+      await store.setPrefs(uuid, { digest_mode: b.freq !== "instant" });
+    }
+    if (b.pause_days !== undefined) await store.setPrefs(uuid, { paused_until: Number(b.pause_days) > 0 ? new Date(Date.now() + Number(b.pause_days) * 86400000) : null });
+    if (typeof b.lang === "string") await store.setLang(uuid, b.lang);
+    return send(res, 200, { ok: true });
+  }
+  send(res, 404, { error: "not found" });
+}
+
 // ── Ghost post.published → instant alerts ─────────────────────────────────────
 async function handleGhostPublished(cfg: Awaited<ReturnType<typeof loadConfig>>, body: Record<string, unknown>) {
   const post = ((body.post as { current?: unknown })?.current) as Record<string, unknown> | undefined;
@@ -198,6 +311,7 @@ async function adminApi(req: http.IncomingMessage, res: http.ServerResponse, cfg
     if (me.username && !cfg.telegram.username) await store.setSetting("telegram_bot_username", me.username);
     const hook = await telegramSetWebhook(cfg.telegram.token, `${cfg.siteUrl}/ghost/alerts/telegram/webhook`, cfg.telegram.webhookSecret);
     await setBotCommands(cfg, BOT_COMMANDS); // publish the "/" command menu
+    await setChatMenuButton(cfg, "🚀 Tenders", `${cfg.siteUrl}/ghost/alerts/app/`); // launch the Mini App from the blue menu button
     return send(res, 200, { ok: hook.ok, username: me.username, error: hook.error });
   }
   if (path === "/admin/api/test-telegram" && req.method === "POST") {

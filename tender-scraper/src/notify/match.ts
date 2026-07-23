@@ -17,6 +17,11 @@ function isCategorySlug(slug: string): boolean {
   return !slug.startsWith("entity-") && !slug.startsWith("region-") && !NON_CATEGORY.has(slug);
 }
 
+// Escape a user-supplied value for a Meili filter string literal ("..."):
+// backslashes first, then double-quotes. Without this a value containing " or \
+// would break out of the quoted literal (filter injection / silent no-match).
+const escFilter = (s: string) => String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
 export function todayStartTs(): number {
   const n = new Date();
   return Math.floor(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()) / 1000);
@@ -102,8 +107,8 @@ export async function queryMeili(
 ): Promise<MeiliHit[]> {
   if (!cfg.meiliHost || !cfg.meiliKey) return [];
   const filters: string[] = [];
-  if (c.catName) filters.push(`categories = "${c.catName.replace(/"/g, '\\"')}"`);
-  if (c.region) filters.push(`region = "${c.region.replace(/"/g, '\\"')}"`);
+  if (c.catName) filters.push(`categories = "${escFilter(c.catName)}"`);
+  if (c.region) filters.push(`region = "${escFilter(c.region)}"`);
   if (c.closed === "0" || !cfg.policy.includeClosed) filters.push("open_rank = 0");
   if (opts.sinceTs) filters.push(`published_ts >= ${opts.sinceTs}`);
   if (opts.deadlineDay != null) filters.push(`deadline_ts >= ${opts.deadlineDay} AND deadline_ts < ${opts.deadlineDay + 86400}`);
@@ -153,7 +158,7 @@ export async function getById(cfg: Config, id: string): Promise<(MeiliHit & { ca
   try {
     const r = await fetch(`${cfg.meiliHost}/indexes/${cfg.meiliIndex}/search`, {
       method: "POST", headers: { Authorization: `Bearer ${cfg.meiliKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ q: "", filter: `id = "${id.replace(/"/g, '\\"')}"`, limit: 1, attributesToRetrieve: ["id", "url", "title", "deadline", "deadline_ts", "publishing_entity", "region", "categories"] }),
+      body: JSON.stringify({ q: "", filter: `id = "${escFilter(id)}"`, limit: 1, attributesToRetrieve: ["id", "url", "title", "deadline", "deadline_ts", "publishing_entity", "region", "categories"] }),
     });
     const d = (await r.json()) as { hits?: (MeiliHit & { categories?: string[] })[] };
     return d.hits?.[0] || null;

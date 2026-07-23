@@ -3,7 +3,8 @@ import type { Config } from "../config";
 
 const api = (token: string, method: string) => `https://api.telegram.org/bot${token}/${method}`;
 
-export type InlineKeyboard = { inline_keyboard: { text: string; callback_data?: string; url?: string }[][] };
+export type InlineButton = { text: string; callback_data?: string; url?: string; web_app?: { url: string }; switch_inline_query_current_chat?: string };
+export type InlineKeyboard = { inline_keyboard: InlineButton[][] };
 
 export async function sendTelegram(cfg: Config, chatId: string, html: string, keyboard?: InlineKeyboard): Promise<void> {
   const r = await fetch(api(cfg.telegram.token, "sendMessage"), {
@@ -36,6 +37,36 @@ export async function setBotCommands(cfg: Config, commands: { command: string; d
   await fetch(api(cfg.telegram.token, "setMyCommands"), {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ commands }),
+  }).catch(() => {});
+}
+
+// Set the persistent blue "menu button" next to the input box to launch the
+// Mini App (WebApp). Applies to every private chat that hasn't overridden it.
+export async function setChatMenuButton(cfg: Config, text: string, url: string): Promise<void> {
+  await fetch(api(cfg.telegram.token, "setChatMenuButton"), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ menu_button: { type: "web_app", text, web_app: { url } } }),
+  }).catch(() => {});
+}
+
+// Inline-mode result article (@bot <query> in any chat).
+export type InlineResult = {
+  type: "article";
+  id: string;
+  title: string;
+  description?: string;
+  input_message_content: { message_text: string; parse_mode?: string; disable_web_page_preview?: boolean };
+  reply_markup?: InlineKeyboard;
+};
+export async function answerInlineQuery(
+  cfg: Config,
+  inlineQueryId: string,
+  results: InlineResult[],
+  opts: { cache_time?: number; is_personal?: boolean } = {},
+): Promise<void> {
+  await fetch(api(cfg.telegram.token, "answerInlineQuery"), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ inline_query_id: inlineQueryId, results, cache_time: opts.cache_time ?? 30, is_personal: opts.is_personal ?? false }),
   }).catch(() => {});
 }
 

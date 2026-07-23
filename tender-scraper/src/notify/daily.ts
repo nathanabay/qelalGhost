@@ -5,9 +5,9 @@
 // Run manually: `npm run notify:daily` (honours DRY_RUN setting).
 
 import { loadConfig } from "./config";
-import { initStore, allAlerts, allSavedWithSubscriber, lastDigestAt, type Alert, type Subscriber, type Channels } from "./store";
+import { initStore, allAlerts, allSavedWithSubscriber, lastDigestAt, effectiveFreq, type Alert, type Subscriber, type Channels } from "./store";
 import { queryMeili, todayStartTs, type MeiliHit } from "./match";
-import { formatReminder, formatDigest, type Item } from "./format";
+import { formatNew, formatReminder, formatDigest, type Item } from "./format";
 import { deliver } from "./senders";
 
 const asItem = (h: MeiliHit): Item => ({ title: h.title, url: h.url, deadline: h.deadline, region: h.region, publishing_entity: h.publishing_entity });
@@ -27,7 +27,10 @@ async function main() {
 
   const today = todayStartTs();
   const isMonday = new Date().getUTCDay() === 1;
-  let reminders = 0, digests = 0, savedReminders = 0;
+  let reminders = 0, digests = 0, savedReminders = 0, catchups = 0;
+  // Daily/batch deliveries are the designated delivery window, so they ignore
+  // instant quiet-hours suppression (the timer itself may fire inside them).
+  const batch = { ignoreQuietHours: true };
 
   for (const { sub, alerts } of byMember.values()) {
     if (sub.paused_until && new Date(sub.paused_until).getTime() > Date.now()) continue;
@@ -38,21 +41,23 @@ async function main() {
       for (const n of cfg.policy.reminderDays) {
         const hits = await queryMeili(cfg, alert.criteria, { deadlineDay: today + n * 86400, limit: 25 });
         for (const h of hits) {
-          const sent = await deliver(cfg, sub, alert.channels, formatReminder(asItem(h), n, cfg.siteUrl), { kind: `reminder_${n}`, tenderId: h.id });
+          const sent = await deliver(cfg, sub, alert.channels, formatReminder(asItem(h), n, cfg.siteUrl), { kind: `reminder_${n}`, tenderId: h.id }, batch);
           if (sent.length) reminders++;
         }
       }
     }
 
-    // ── digest (daily always; weekly only on Mondays) ──
-    const freq = sub.digest_freq || (sub.digest_mode ? "daily" : "instant");
-    if ((freq === "daily" || (freq === "weekly" && isMonday))) {
+    const freq = effectiveFreq(sub);
+    if (freq === "daily" || (freq === "weekly" && isMonday)) {
+      // ── digest (daily always; weekly only on Mondays) ──
       const last = await lastDigestAt(sub.member_uuid);
-      const sinceTs = last ? Math.floor(new Date(last).getTime() / 1000) : Math.floor(Date.now() / 1000) - 86400;
+      const windowSec = freq === "weekly" ? 7 * 86400 : 86400;
+      const sinceTs = last ? Math.floor(new Date(last).getTime() / 1000) : Math.floor(Date.now() / 1000) - windowSec;
       const seen = new Set<string>();
       const items: Item[] = [];
       const channels: Channels = {};
       for (const alert of alerts) {
+        if (alert.snoozed_until && new Date(alert.snoozed_until).getTime() > Date.now()) continue; // snoozed alerts stay quiet
         if (alert.channels.email) channels.email = true;
         if (alert.channels.telegram) channels.telegram = true;
         const hits = await queryMeili(cfg, alert.criteria, { sinceTs, limit: 25 });
@@ -60,8 +65,21 @@ async function main() {
       }
       if (items.length) {
         const dateKey = new Date().toISOString().slice(0, 10);
-        const sent = await deliver(cfg, sub, channels, formatDigest(items.slice(0, 20), cfg.siteUrl), { kind: "digest", tenderId: `digest-${dateKey}` });
+        const sent = await deliver(cfg, sub, channels, formatDigest(items.slice(0, 20), cfg.siteUrl), { kind: "digest", tenderId: `digest-${dateKey}` }, batch);
         if (sent.length) digests++;
+      }
+    } else if (freq === "instant") {
+      // ── instant catch-up: re-sweep recent matches for anything the instant
+      // path dropped (quiet hours / daily cap). Idempotent via sent_log on the
+      // same kind:"new" key, so already-delivered tenders don't repeat. ──
+      const sinceTs = Math.floor(Date.now() / 1000) - 26 * 3600; // cover the gap since the last daily run
+      for (const alert of alerts) {
+        if (alert.snoozed_until && new Date(alert.snoozed_until).getTime() > Date.now()) continue;
+        const hits = await queryMeili(cfg, alert.criteria, { sinceTs, limit: 25 });
+        for (const h of hits) {
+          const sent = await deliver(cfg, sub, alert.channels, formatNew(asItem(h), cfg.siteUrl), { kind: "new", tenderId: h.id }, batch);
+          if (sent.length) catchups++;
+        }
       }
     }
   }
@@ -75,11 +93,11 @@ async function main() {
     const n = Math.round((dl - today) / 86400);
     if (!cfg.policy.reminderDays.includes(n)) continue;
     const item: Item = { title: s.title || s.tender_id, url: s.url || cfg.siteUrl, deadline: s.deadline };
-    const sent = await deliver(cfg, sub, { email: true, telegram: true }, formatReminder(item, n, cfg.siteUrl), { kind: `savedreminder_${n}`, tenderId: s.tender_id });
+    const sent = await deliver(cfg, sub, { email: true, telegram: true }, formatReminder(item, n, cfg.siteUrl), { kind: `savedreminder_${n}`, tenderId: s.tender_id }, { ignoreQuietHours: true });
     if (sent.length) savedReminders++;
   }
 
-  console.log(`Done. reminders=${reminders}, digests=${digests}, saved-reminders=${savedReminders}${cfg.policy.dryRun ? " (DRY_RUN)" : ""}`);
+  console.log(`Done. reminders=${reminders}, digests=${digests}, catch-ups=${catchups}, saved-reminders=${savedReminders}${cfg.policy.dryRun ? " (DRY_RUN)" : ""}`);
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });
