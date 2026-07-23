@@ -13,9 +13,10 @@ import { memberFromCookie, staffFromCookie } from "./auth";
 import { factsFromPost, matches } from "./match";
 import { formatNew } from "./format";
 import { deliver } from "./senders";
-import { sendTelegram, telegramGetMe, telegramSetWebhook } from "./senders/telegram";
+import { sendTelegram, telegramGetMe, telegramSetWebhook, setBotCommands } from "./senders/telegram";
 import { sendEmail, verifyEmail } from "./senders/email";
 import { renderAdminPage, ADMIN_SIDEBAR_JS } from "./admin-page";
+import { handleUpdate, BOT_COMMANDS } from "./bot";
 
 const PORT = Number(process.env.NOTIFY_PORT || 3839);
 
@@ -47,8 +48,8 @@ const server = http.createServer(async (req, res) => {
     // ── Telegram webhook ──
     if (req.method === "POST" && path === `/telegram/webhook/${cfg.telegram.webhookSecret}` && cfg.telegram.webhookSecret) {
       const upd = await readJson(req);
-      await handleTelegramUpdate(cfg, upd);
-      return send(res, 200, { ok: true });
+      handleUpdate(cfg, upd).catch((e) => console.error("[notify] telegram:", e));
+      return send(res, 200, { ok: true }); // ack fast
     }
     // ── Ghost post.published webhook ──
     if (req.method === "POST" && path === `/ghost/webhook/${cfg.ghostWebhookSecret}` && cfg.ghostWebhookSecret) {
@@ -121,25 +122,6 @@ async function memberApi(req: http.IncomingMessage, res: http.ServerResponse, cf
   send(res, 404, { error: "not found" });
 }
 
-// ── Telegram update handling ──────────────────────────────────────────────────
-async function handleTelegramUpdate(cfg: Awaited<ReturnType<typeof loadConfig>>, upd: Record<string, unknown>) {
-  const msg = (upd.message || upd.edited_message) as { text?: string; chat?: { id?: number } } | undefined;
-  const chatId = msg?.chat?.id;
-  const text = (msg?.text || "").trim();
-  if (!chatId) return;
-  const chat = String(chatId);
-  if (/^\/start\s+(\S+)/.test(text)) {
-    const token = text.match(/^\/start\s+(\S+)/)![1];
-    const sub = await store.bindTelegramByToken(token, chat);
-    await sendTelegram(cfg, chat, sub ? "✅ Linked! You'll get your Qellal tender alerts here. Send /stop to unlink." : "This link expired. Open the Alerts page on the site and tap “Link Telegram” again.").catch(() => {});
-  } else if (/^\/stop/.test(text)) {
-    await store.unlinkTelegramByChat(chat);
-    await sendTelegram(cfg, chat, "🔕 Unlinked. You won't get Telegram alerts anymore.").catch(() => {});
-  } else {
-    await sendTelegram(cfg, chat, "Open the Alerts page on tenders.qelal.et and tap “Link Telegram” to connect this chat.").catch(() => {});
-  }
-}
-
 // ── Ghost post.published → instant alerts ─────────────────────────────────────
 async function handleGhostPublished(cfg: Awaited<ReturnType<typeof loadConfig>>, body: Record<string, unknown>) {
   const post = ((body.post as { current?: unknown })?.current) as Record<string, unknown> | undefined;
@@ -186,6 +168,7 @@ async function adminApi(req: http.IncomingMessage, res: http.ServerResponse, cfg
     if (!me.ok) return send(res, 200, { ok: false, error: me.error });
     if (me.username && !cfg.telegram.username) await store.setSetting("telegram_bot_username", me.username);
     const hook = await telegramSetWebhook(cfg.telegram.token, `${cfg.siteUrl}/ghost/alerts/telegram/webhook/${cfg.telegram.webhookSecret}`, cfg.telegram.webhookSecret);
+    await setBotCommands(cfg, BOT_COMMANDS); // publish the "/" command menu
     return send(res, 200, { ok: hook.ok, username: me.username, error: hook.error });
   }
   if (path === "/admin/api/test-telegram" && req.method === "POST") {

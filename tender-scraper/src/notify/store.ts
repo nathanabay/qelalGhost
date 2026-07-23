@@ -79,6 +79,9 @@ export async function upsertSubscriber(uuid: string, email: string | null): Prom
 export async function getSubscriber(uuid: string): Promise<Subscriber | null> {
   return (d().prepare("SELECT * FROM subscribers WHERE member_uuid = ?").get(uuid) as Subscriber) || null;
 }
+export async function getSubscriberByChat(chatId: string): Promise<Subscriber | null> {
+  return (d().prepare("SELECT * FROM subscribers WHERE telegram_chat_id = ?").get(chatId) as Subscriber) || null;
+}
 export async function setLinkToken(uuid: string, token: string): Promise<void> {
   d().prepare("UPDATE subscribers SET telegram_link_token = ? WHERE member_uuid = ?").run(token, uuid);
 }

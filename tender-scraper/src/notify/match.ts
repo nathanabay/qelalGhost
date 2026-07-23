@@ -98,7 +98,7 @@ export type MeiliHit = { id: string; url: string; title: string; deadline: strin
 export async function queryMeili(
   cfg: Config,
   c: Criteria & { catName?: string },
-  opts: { sinceTs?: number; deadlineDay?: number; limit?: number } = {},
+  opts: { sinceTs?: number; deadlineDay?: number; limit?: number; offset?: number; sort?: string[] } = {},
 ): Promise<MeiliHit[]> {
   if (!cfg.meiliHost || !cfg.meiliKey) return [];
   const filters: string[] = [];
@@ -114,7 +114,9 @@ export async function queryMeili(
   const body = {
     q: c.q || "",
     limit: opts.limit || 25,
-    sort: ["published_ts:desc"],
+    offset: opts.offset || 0,
+    // With a query, let relevance rank (open-first); otherwise default to newest.
+    sort: opts.sort || (c.q ? ["open_rank:asc"] : ["published_ts:desc"]),
     filter: filters.length ? filters.join(" AND ") : undefined,
     attributesToRetrieve: ["id", "url", "title", "deadline", "deadline_ts", "publishing_entity", "region"],
   };

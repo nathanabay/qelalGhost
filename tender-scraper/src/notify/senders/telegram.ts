@@ -3,13 +3,31 @@ import type { Config } from "../config";
 
 const api = (token: string, method: string) => `https://api.telegram.org/bot${token}/${method}`;
 
-export async function sendTelegram(cfg: Config, chatId: string, html: string): Promise<void> {
+export type InlineKeyboard = { inline_keyboard: { text: string; callback_data?: string; url?: string }[][] };
+
+export async function sendTelegram(cfg: Config, chatId: string, html: string, keyboard?: InlineKeyboard): Promise<void> {
   const r = await fetch(api(cfg.telegram.token, "sendMessage"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: "HTML", disable_web_page_preview: true }),
+    body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: "HTML", disable_web_page_preview: true, ...(keyboard ? { reply_markup: keyboard } : {}) }),
   });
   if (!r.ok) throw new Error(`telegram sendMessage ${r.status}: ${(await r.text()).slice(0, 160)}`);
+}
+
+// Answer a callback query (stops the loading spinner; optional toast).
+export async function answerCallback(cfg: Config, id: string, text?: string): Promise<void> {
+  await fetch(api(cfg.telegram.token, "answerCallbackQuery"), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback_query_id: id, ...(text ? { text } : {}) }),
+  }).catch(() => {});
+}
+
+// Publish the slash-command menu (shown in the Telegram "/" picker).
+export async function setBotCommands(cfg: Config, commands: { command: string; description: string }[]): Promise<void> {
+  await fetch(api(cfg.telegram.token, "setMyCommands"), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ commands }),
+  }).catch(() => {});
 }
 
 export async function telegramGetMe(token: string): Promise<{ ok: boolean; username?: string; error?: string }> {
