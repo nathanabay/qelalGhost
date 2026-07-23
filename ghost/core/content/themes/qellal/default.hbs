@@ -15,6 +15,7 @@
     {{!-- Apply a visitor's saved light/dark choice before first paint (no flash). --}}
     <script>(function(){try{var t=localStorage.getItem('qellal-theme');if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();</script>
 
+    {{#if @member}}<script>window.QELLAL_MEMBER = { uuid: "{{@member.uuid}}", email: "{{@member.email}}" };</script>{{/if}}
     {{ghost_head}}
 </head>
 <body class="{{body_class}}">
@@ -121,7 +122,6 @@
             key: "{{@custom.meili_search_key}}"
         };
     </script>
-    {{#if @member}}<script>window.QELLAL_MEMBER = { uuid: "{{@member.uuid}}", email: "{{@member.email}}" };</script>{{/if}}
     <script src="{{asset "built/categories.js"}}"></script>
     <script src="{{asset "js/tender.js"}}"></script>
     {{ghost_foot}}
