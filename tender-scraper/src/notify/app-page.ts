@@ -192,15 +192,17 @@ async function createAlertFromSearch(){
 function renderBrowse(){
   const cats=(STATE.init&&STATE.init.categories||[]);
   view.innerHTML =
-    '<div class="grid2">'
-      +'<button class="btn sec" onclick="browse(\\'closing\\')">📅 Closing this week</button>'
-      +'<button class="btn sec" onclick="browse(\\'today\\')">⏰ Closing today</button>'
-      +'<button class="btn sec" onclick="browse(\\'latest\\')" style="grid-column:1/3">🆕 Latest tenders</button>'
-    +'</div>'
+    '<p class="sec-h">Quick view</p>'
+    +'<select id="quickSel"><option value="">Choose…</option>'
+      +'<option value="closing">📅 Closing this week</option>'
+      +'<option value="today">⏰ Closing today</option>'
+      +'<option value="latest">🆕 Latest tenders</option>'
+    +'</select>'
     +'<p class="sec-h">By sector</p>'
     +'<select id="secSel"><option value="">Choose a sector…</option>'+cats.map(c=>'<option value="'+esc(c.value)+'">'+esc(c.value)+' ('+c.count+')</option>').join('')+'</select>'
     +'<div id="results"></div>';
-  document.getElementById('secSel').addEventListener('change', e=>{ const v=e.target.value; if(v) browseCat(v); });
+  document.getElementById('quickSel').addEventListener('change', e=>{ const v=e.target.value; if(v){ document.getElementById('secSel').value=''; browse(v); } });
+  document.getElementById('secSel').addEventListener('change', e=>{ const v=e.target.value; if(v){ document.getElementById('quickSel').value=''; browseCat(v); } });
 }
 async function browse(mode){
   haptic();
