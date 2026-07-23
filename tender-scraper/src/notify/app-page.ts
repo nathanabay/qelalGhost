@@ -23,7 +23,8 @@ export function renderMiniApp(): string {
 *{box-sizing:border-box}
 html{color-scheme:light}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--fb),system-ui,Arial,sans-serif;font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:contain}
-.wrap{max-width:640px;margin:0 auto;padding:0 14px calc(96px + env(safe-area-inset-bottom))}
+.wrap{max-width:640px;margin:0 auto;padding:0 14px calc(28px + env(safe-area-inset-bottom))}
+.wrap.hasmain{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 header{position:sticky;top:0;background:var(--paper);padding:14px 0 6px;z-index:5}
 h1{font-family:var(--fh);font-size:1.25rem;margin:0 0 2px;font-weight:700;letter-spacing:-.02em}
 h2{font-family:var(--fh);letter-spacing:-.02em}
@@ -306,8 +307,9 @@ async function setLang(l){ haptic(); await api('/api/prefs',{method:'POST',body:
 
 // ── MainButton / BackButton helpers (themed to ink) ──
 let _mainCb=null;
-function showMain(text,cb){ try{ tg.MainButton.setParams({text,color:'#17140D',text_color:'#ffffff'}); tg.MainButton.show(); if(_mainCb) tg.MainButton.offClick(_mainCb); _mainCb=cb; tg.MainButton.onClick(cb); }catch(e){} }
-function hideMain(){ try{ if(_mainCb) tg.MainButton.offClick(_mainCb); _mainCb=null; tg.MainButton.hide(); }catch(e){} }
+const wrapEl=document.querySelector('.wrap');
+function showMain(text,cb){ if(wrapEl) wrapEl.classList.add('hasmain'); try{ tg.MainButton.setParams({text,color:'#17140D',text_color:'#ffffff'}); tg.MainButton.show(); if(_mainCb) tg.MainButton.offClick(_mainCb); _mainCb=cb; tg.MainButton.onClick(cb); }catch(e){} }
+function hideMain(){ if(wrapEl) wrapEl.classList.remove('hasmain'); try{ if(_mainCb) tg.MainButton.offClick(_mainCb); _mainCb=null; tg.MainButton.hide(); }catch(e){} }
 let _backCb=null;
 function showBack(cb){ try{ tg.BackButton.show(); if(_backCb) tg.BackButton.offClick(_backCb); _backCb=cb; tg.BackButton.onClick(cb); }catch(e){} }
 function hideBack(){ try{ if(_backCb) tg.BackButton.offClick(_backCb); _backCb=null; tg.BackButton.hide(); }catch(e){} }
