@@ -126,6 +126,38 @@ function listHTML(hits, empty){
   return hits.map(cardHTML).join('');
 }
 
+// ── paginated query + infinite scroll ──
+const PAGE=20;
+let Q={params:{},title:'',offset:0,loading:false,done:true};
+let _io=null;
+async function runQuery(params,title){
+  Q={params:params||{},title:title||'',offset:0,loading:false,done:false};
+  const res=await api('/api/search?'+qs(Object.assign({},Q.params)));
+  const hits=res.hits||[];
+  Q.offset=hits.length; Q.done=hits.length<PAGE;
+  const el=document.getElementById('results'); if(!el) return;
+  el.innerHTML=(Q.title?'<p class="sec-h">'+esc(Q.title)+'</p>':'')
+    +'<div id="hits">'+(hits.length?hits.map(cardHTML).join(''):'<p class="muted">No tenders matched.</p>')+'</div>'
+    +(Q.done?'':'<button class="btn sec" id="moreBtn" onclick="loadMore()">Load more</button>');
+  observeMore();
+}
+async function loadMore(){
+  if(Q.loading||Q.done) return; Q.loading=true;
+  const b=document.getElementById('moreBtn'); if(b){ b.textContent='Loading…'; b.disabled=true; }
+  const res=await api('/api/search?'+qs(Object.assign({offset:Q.offset},Q.params)));
+  const hits=res.hits||[];
+  Q.offset+=hits.length; Q.done=hits.length<PAGE; Q.loading=false;
+  const hitsEl=document.getElementById('hits'); if(hitsEl&&hits.length) hitsEl.insertAdjacentHTML('beforeend',hits.map(cardHTML).join(''));
+  if(b) b.remove();
+  const el=document.getElementById('results'); if(el&&!Q.done) el.insertAdjacentHTML('beforeend','<button class="btn sec" id="moreBtn" onclick="loadMore()">Load more</button>');
+  observeMore();
+}
+function observeMore(){
+  const b=document.getElementById('moreBtn'); if(!b) return;
+  if(!_io) _io=new IntersectionObserver(es=>{ es.forEach(e=>{ if(e.isIntersecting) loadMore(); }); },{rootMargin:'350px'});
+  _io.observe(b);
+}
+
 // ── tabs ──
 document.getElementById('tabs').addEventListener('click', e=>{
   const b=e.target.closest('.tab'); if(!b) return;
@@ -181,9 +213,8 @@ let _t; function debounce(fn,ms){ return (...a)=>{ clearTimeout(_t); _t=setTimeo
 async function doSearch(){
   const q=val('q'), catName=val('cat'), region=val('reg'), deadline=val('dl');
   STATE.lastSearch={q,catName,region,deadline};
-  const res=await api('/api/search?'+qs({q,catName,region,deadline}));
-  document.getElementById('results').innerHTML=listHTML(res.hits,'No tenders matched.');
   if((q||catName||region)){ showMain('🔔 Alert me for this search', createAlertFromSearch); } else hideMain();
+  await runQuery({q,catName,region,deadline}, (q||catName||region||deadline)?'':'Latest tenders');
 }
 function val(id){ const e=document.getElementById(id); return e?e.value.trim():''; }
 
@@ -201,13 +232,11 @@ async function browse(mode){
   if(mode==='closing'){ p={deadline:'7',sort:'open_rank:asc,deadline_ts:asc'}; title='Closing this week'; }
   else if(mode==='today'){ p={deadline:'1',sort:'deadline_ts:asc'}; title='Closing today'; }
   else p={sort:'published_ts:desc'};
-  const res=await api('/api/search?'+qs(p));
-  const el=document.getElementById('results'); if(el) el.innerHTML='<p class="sec-h">'+title+'</p>'+listHTML(res.hits,'Nothing here right now.');
+  await runQuery(p, title);
 }
 async function browseCat(name){
   haptic();
-  const res=await api('/api/search?'+qs({catName:name,sort:'open_rank:asc,deadline_ts:asc'}));
-  document.getElementById('results').innerHTML='<p class="sec-h">'+esc(name)+'</p>'+listHTML(res.hits,'Nothing here right now.');
+  await runQuery({catName:name,sort:'open_rank:asc,deadline_ts:asc'}, name);
 }
 
 // ── tender detail ──
@@ -243,8 +272,7 @@ async function toggleSave(id){
 async function similar(){
   const cat=STATE.curCat;
   if(!cat){ toast('No similar tenders.'); return; }
-  const res=await api('/api/search?'+qs({catName:cat,sort:'open_rank:asc,deadline_ts:asc'}));
-  document.getElementById('results').innerHTML='<p class="sec-h">Similar · '+esc(cat)+'</p>'+listHTML(res.hits,'No similar tenders.');
+  await runQuery({catName:cat,sort:'open_rank:asc,deadline_ts:asc'}, 'Similar · '+cat);
 }
 function openLink(u){ try{ tg.openLink(u); }catch(e){ window.open(u,'_blank'); } }
 function shareTender(u){ openLink('https://t.me/share/url?url='+encodeURIComponent(u)); }
