@@ -69,8 +69,7 @@ a{color:var(--ink);font-weight:600}
   <h1>Qellal Tenders</h1>
   <p class="sub" id="hello">Ethiopian government &amp; NGO tenders</p>
   <div class="tabs" id="tabs">
-    <button class="tab on" data-t="search">Search</button>
-    <button class="tab" data-t="browse">Browse</button>
+    <button class="tab on" data-t="browse">Browse</button>
     <button class="tab" data-t="alerts">Alerts</button>
     <button class="tab" data-t="saved">Saved</button>
     <button class="tab" data-t="settings">Settings</button>
@@ -99,7 +98,7 @@ async function api(path, opts){
   return r.json();
 }
 
-let STATE = { tab:'search', init:null, lastSearch:{}, curCat:'' };
+let STATE = { tab:'browse', init:null, lastSearch:{}, curCat:'' };
 const view = document.getElementById('view');
 const todayTs = ()=>{ const n=new Date(); return Math.floor(Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate())/1000); };
 function daysLeftOf(h){ if(!h.deadline) return null; return Math.round((Date.parse(h.deadline)/1000-todayTs())/86400); }
@@ -136,7 +135,6 @@ function render(){
   const tabsEl=document.getElementById('tabs');
   if(STATE.init && STATE.init.linked===false){ if(tabsEl) tabsEl.style.display='none'; return renderLink(); }
   if(tabsEl) tabsEl.style.display='';
-  if(STATE.tab==='search') return renderSearch();
   if(STATE.tab==='browse') return renderBrowse();
   if(STATE.tab==='alerts') return renderAlerts();
   if(STATE.tab==='saved') return renderSaved();
@@ -154,8 +152,8 @@ function renderLink(){
     +'</div>';
 }
 
-// ── search ──
-function renderSearch(){
+// ── browse (search + filters + quick views, merged) ──
+function renderBrowse(){
   const i=STATE.init, cats=(i&&i.categories||[]), regs=(i&&i.regions||[]);
   view.innerHTML =
     '<input id="q" placeholder="Search tenders… e.g. electrical" value="'+esc(STATE.lastSearch.q||'')+'">'
@@ -163,13 +161,16 @@ function renderSearch(){
       +'<select id="cat"><option value="">All sectors</option>'+cats.map(c=>'<option '+(STATE.lastSearch.catName===c.value?'selected':'')+' value="'+esc(c.value)+'">'+esc(c.value)+' ('+c.count+')</option>').join('')+'</select>'
       +'<select id="reg"><option value="">All regions</option>'+regs.map(c=>'<option '+(STATE.lastSearch.region===c.value?'selected':'')+' value="'+esc(c.value)+'">'+esc(c.value)+' ('+c.count+')</option>').join('')+'</select>'
       +'<select id="dl" class="full"><option value="">Any deadline</option><option value="7">Closing within 7 days</option><option value="14">Within 14 days</option><option value="30">Within 30 days</option></select>'
+      +'<select id="quickSel" class="full"><option value="">Quick view…</option><option value="closing">📅 Closing this week</option><option value="today">⏰ Closing today</option><option value="latest">🆕 Latest tenders</option></select>'
     +'</div>'
-    +'<div id="results"><p class="muted">Type a keyword or pick a filter.</p></div>';
-  const run=()=>doSearch();
+    +'<div id="results"><p class="muted">Type a keyword, pick a filter, or choose a quick view.</p></div>';
+  const run=()=>{ const qk=document.getElementById('quickSel'); if(qk) qk.value=''; doSearch(); };
   document.getElementById('q').addEventListener('input', debounce(run,350));
   ['cat','reg','dl'].forEach(id=>document.getElementById(id).addEventListener('change', run));
-  if(STATE.lastSearch.q||STATE.lastSearch.catName||STATE.lastSearch.region) run();
+  document.getElementById('quickSel').addEventListener('change', e=>{ const v=e.target.value; if(v){ clearFilters(); browse(v); } });
+  if(STATE.lastSearch.q||STATE.lastSearch.catName||STATE.lastSearch.region||STATE.lastSearch.deadline) doSearch();
 }
+function clearFilters(){ ['q','cat','reg','dl'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; }); STATE.lastSearch={}; hideMain(); }
 let _t; function debounce(fn,ms){ return (...a)=>{ clearTimeout(_t); _t=setTimeout(()=>fn(...a),ms); }; }
 async function doSearch(){
   const q=val('q'), catName=val('cat'), region=val('reg'), deadline=val('dl');
@@ -188,22 +189,6 @@ async function createAlertFromSearch(){
   await loadInit();
 }
 
-// ── browse ──
-function renderBrowse(){
-  const cats=(STATE.init&&STATE.init.categories||[]);
-  view.innerHTML =
-    '<p class="sec-h">Quick view</p>'
-    +'<select id="quickSel"><option value="">Choose…</option>'
-      +'<option value="closing">📅 Closing this week</option>'
-      +'<option value="today">⏰ Closing today</option>'
-      +'<option value="latest">🆕 Latest tenders</option>'
-    +'</select>'
-    +'<p class="sec-h">By sector</p>'
-    +'<select id="secSel"><option value="">Choose a sector…</option>'+cats.map(c=>'<option value="'+esc(c.value)+'">'+esc(c.value)+' ('+c.count+')</option>').join('')+'</select>'
-    +'<div id="results"></div>';
-  document.getElementById('quickSel').addEventListener('change', e=>{ const v=e.target.value; if(v){ document.getElementById('secSel').value=''; browse(v); } });
-  document.getElementById('secSel').addEventListener('change', e=>{ const v=e.target.value; if(v){ document.getElementById('quickSel').value=''; browseCat(v); } });
-}
 async function browse(mode){
   haptic();
   let p={}; if(mode==='closing') p={deadline:'7',sort:'open_rank:asc,deadline_ts:asc'};
