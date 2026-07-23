@@ -57,7 +57,7 @@ input:focus,select:focus{border-color:var(--ink)}
 .detail h2{font-size:1.2rem;margin:8px 0 6px;line-height:1.25}
 .detail .dmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .detail .dsub{color:var(--muted);font-size:.88rem;margin-bottom:12px}
-.desc{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px;margin:6px 0 4px;font-size:.9rem;line-height:1.55;color:var(--ink);white-space:pre-wrap;word-break:break-word;max-height:46vh;overflow-y:auto;overscroll-behavior:contain}
+.desc{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px;margin:6px 0 4px;font-size:.9rem;line-height:1.55;color:var(--ink);white-space:pre-wrap;word-break:break-word}
 .seg{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:6px 0;padding:3px;gap:3px}
 .seg button{flex:1;padding:9px;border:none;background:transparent;color:var(--ink);font:inherit;font-weight:600;font-size:.85rem;border-radius:9px;cursor:pointer;text-transform:capitalize}
 .seg button.on{background:var(--ink);color:#fff}
