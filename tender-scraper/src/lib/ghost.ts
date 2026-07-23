@@ -67,10 +67,24 @@ function entitySlug(name: string): string {
   return `entity-${sl}`;
 }
 
+// Region gets its own "region-*" slug (like entity-*) so the theme/indexer can
+// treat it as a first-class facet, separate from the sector category tags.
+export function regionSlug(name: string): string {
+  const base = name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  const sl = base || crypto.createHash("sha1").update(name).digest("hex").slice(0, 16);
+  return `region-${sl}`;
+}
+
 export function tenderTags(t: TenderInput): { name: string; slug?: string }[] {
   const raw: { name: string; slug?: string }[] = [];
   for (const c of t.categories) if (c?.name) raw.push({ name: c.name });
-  if (t.region) raw.push({ name: t.region });
+  if (t.region) raw.push({ name: t.region, slug: regionSlug(t.region) });
   raw.push({ name: detectLanguage(t) });
   if (t.source_name) raw.push({ name: t.source_name });
   // The publishing entity is a tag too, with an explicit "entity-*" slug so the
@@ -78,6 +92,10 @@ export function tenderTags(t: TenderInput): { name: string; slug?: string }[] {
   if (t.publishing_entity) {
     raw.push({ name: t.publishing_entity, slug: entitySlug(t.publishing_entity) });
   }
+  // 2merkato promotion / type flags, as their own slugs so the theme + indexer
+  // can treat them specially (a Featured rail, a Proforma badge).
+  if (t.featured) raw.push({ name: "Featured", slug: "featured" });
+  if (t.proforma) raw.push({ name: "Proforma", slug: "proforma" });
 
   const seen = new Set<string>();
   const tags: { name: string; slug?: string }[] = [];
@@ -91,30 +109,67 @@ export function tenderTags(t: TenderInput): { name: string; slug?: string }[] {
   return tags;
 }
 
-// The post body: original description (already sanitized HTML) + a facts block
-// that preserves every remaining structured field + a legal attribution link.
-export function tenderHtml(t: TenderInput): string {
+function escAttr(s: string): string {
+  return esc(s).replace(/"/g, "&quot;");
+}
+function hm(s: string | null | undefined): string | null {
+  const m = s ? String(s).match(/\b(\d{2}):(\d{2})\b/) : null;
+  return m ? `${m[1]}:${m[2]}` : null;
+}
+function dateHm(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const d = String(s).slice(0, 10);
+  const t = hm(s);
+  return t ? `${d} ${t}` : d;
+}
+
+// The "Tender details" facts block + a Documents list. Shared by tenderHtml (new
+// posts) and the enrichment backfill (existing posts) so both render identically.
+export function tenderFactsHtml(t: TenderInput): string {
   const rows: [string, string | null][] = [
     ["Deadline", t.deadline],
+    ["Bid closing time", hm(t.bid_closing_at)],
+    ["Bid closing (note)", t.bid_closing_text ?? null],
+    ["Bid opening", dateHm(t.bid_opening_at)],
+    ["Bid opening (note)", t.bid_opening_text ?? null],
     ["Region", t.region],
     ["Publishing entity", t.publishing_entity],
+    ["Buyer TIN", t.company_tin ?? null],
+    ["Buyer phone", t.company_phone ?? null],
+    ["Buyer address", t.company_address ?? null],
     ["Bid bond", t.bid_bond],
     ["Bid document price", t.bid_document_price],
     ["Published", t.published_on ?? t.published_date],
     ["Posted at", t.posted_at],
   ];
-  const facts = rows
+  let facts = rows
     .filter(([, v]) => v != null && String(v).trim() !== "")
     .map(([k, v]) => `<li><strong>${esc(k)}:</strong> ${esc(String(v))}</li>`)
     .join("");
+  if (t.company_website && t.company_website.trim()) {
+    const w = t.company_website.trim();
+    const href = /^https?:\/\//i.test(w) ? w : `https://${w}`;
+    facts += `<li><strong>Buyer website:</strong> <a href="${escAttr(href)}" target="_blank" rel="noopener nofollow">${esc(w)}</a></li>`;
+  }
+  const factsBlock = facts ? `<hr><h3>Tender details</h3><ul>${facts}</ul>` : "";
+  const docs = (t.documents ?? []).filter((d) => d && d.url);
+  const docsBlock = docs.length
+    ? `<h3>Documents</h3><ul>${docs
+        .map(
+          (d) =>
+            `<li><a href="${escAttr(d.url)}" target="_blank" rel="noopener nofollow">${esc(d.name || "Document")}</a></li>`,
+        )
+        .join("")}</ul>`
+    : "";
+  return [factsBlock, docsBlock].filter(Boolean).join("\n");
+}
 
+// The post body: original description (already sanitized HTML) + the facts block.
+// The source_url is preserved as the post's canonical_url (legal attribution),
+// and the theme renders a dedicated "Source" card from it.
+export function tenderHtml(t: TenderInput): string {
   const body = (t.description ?? "").trim();
-
-  // No inline attribution link here: the source_url is preserved as the post's
-  // canonical_url, and the theme renders a dedicated "Source" card from it.
-  return [body, facts ? `<hr><h3>Tender details</h3><ul>${facts}</ul>` : ""]
-    .filter(Boolean)
-    .join("\n");
+  return [body, tenderFactsHtml(t)].filter(Boolean).join("\n");
 }
 
 export function tenderExcerpt(t: TenderInput): string | undefined {
@@ -267,6 +322,14 @@ export class GhostAdminClient {
   async adminPost<T = unknown>(path: string, body: unknown): Promise<T> {
     const r = await this.req(path, { method: "POST", body: JSON.stringify(body) });
     if (!r.ok) throw new Error(`POST ${path} failed (${r.status}): ${await r.text()}`);
+    return (await r.json()) as T;
+  }
+
+  // Generic authenticated Admin API PUT (used by the region backfill to add a
+  // tag to an existing post).
+  async adminPut<T = unknown>(path: string, body: unknown): Promise<T> {
+    const r = await this.req(path, { method: "PUT", body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(`PUT ${path} failed (${r.status}): ${await r.text()}`);
     return (await r.json()) as T;
   }
 }

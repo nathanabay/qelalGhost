@@ -16,4 +16,17 @@ export type TenderInput = {
   published_on: string | null; // source publication date, e.g. "Jul 15, 2026"
   posted_at: string | null; // precise posting instant (ISO), carries date AND time
   categories: { slug: string; name: string }[]; // first = primary
+  // Enriched from the 2merkato detail page (all optional — older constructors omit them).
+  bid_opening_at?: string | null; // "YYYY-MM-DD HH:MM:SS" — when bids are opened
+  bid_closing_at?: string | null; // full closing datetime (carries the time)
+  documents?: { name: string; url: string }[]; // attached tender documents (links)
+  company_tin?: string | null;
+  company_phone?: string | null;
+  company_website?: string | null;
+  company_address?: string | null;
+  company_logo?: string | null;
+  featured?: boolean; // 2merkato is_featured || is_pinned → a "featured" tag
+  proforma?: boolean; // 2merkato is_proforma → a "proforma" tag
+  bid_closing_text?: string | null; // free-text closing (e.g. "varies per lot")
+  bid_opening_text?: string | null; // free-text opening
 };

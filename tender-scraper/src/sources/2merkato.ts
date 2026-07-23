@@ -24,21 +24,38 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type NamePair = { name_en?: string | null; name?: string | null };
 type RawSource = { name_en?: string | null; publication_date?: string | null };
+type RawCompany = {
+  name_en?: string | null;
+  name?: string | null;
+  tin?: string | null;
+  phones?: string | string[] | null;
+  website?: string | null;
+  address?: string | null;
+  logo?: string | null;
+};
+type RawDoc = { name?: string | null; title?: string | null; original_name?: string | null; file_name?: string | null; url?: string | null; file?: string | null; path?: string | null; link?: string | null; download_url?: string | null } | string;
 type RawTender = {
   id: string;
   title: string | null;
   description: string | null;
   ai_summary: string | null;
   bid_closing_date: string | null;
+  bid_opening_date: string | null;
+  bid_closing_date_text: string | null;
+  bid_opening_date_text: string | null;
   published_at: string | null;
   created_at: string | null;
   bid_bond: string | number | null;
   bid_document_price: string | number | null;
   sources: RawSource[] | null;
-  company: NamePair | null;
+  documents: RawDoc[] | null;
+  company: RawCompany | null;
   region: NamePair | string | null;
   categories: RawCategory[] | RawCategory | string | null;
   is_open: boolean;
+  is_featured?: boolean | null;
+  is_pinned?: boolean | null;
+  is_proforma?: boolean | null;
 };
 
 function toDate(s: string | null | undefined): string | null {
@@ -192,6 +209,65 @@ function toStr(v: string | number | null | undefined): string | null {
   return String(v).trim() || null;
 }
 
+function absUrl(u: string): string {
+  return /^https?:\/\//i.test(u) ? u : `${BASE}${u.startsWith("/") ? "" : "/"}${u}`;
+}
+function phoneOf(p: string | string[] | null | undefined): string | null {
+  if (!p) return null;
+  const arr = Array.isArray(p) ? p : [p];
+  const list = arr.map((x) => String(x).trim()).filter(Boolean);
+  return list.length ? list.join(", ").slice(0, 120) : null;
+}
+function mapDocs(docs: RawDoc[] | null | undefined): { name: string; url: string }[] {
+  if (!Array.isArray(docs)) return [];
+  const out: { name: string; url: string }[] = [];
+  for (const d of docs) {
+    if (!d) continue;
+    if (typeof d === "string") { out.push({ name: "Document", url: absUrl(d) }); continue; }
+    const url = d.url ?? d.file ?? d.path ?? d.link ?? d.download_url;
+    if (!url) continue;
+    const name = d.name ?? d.title ?? d.original_name ?? d.file_name ?? "Document";
+    out.push({ name: String(name).trim() || "Document", url: absUrl(String(url)) });
+  }
+  return out;
+}
+
+// Everything the facts block needs, mapped from a DETAIL-page tender object.
+// Used by the enrichment backfill to regenerate an existing post's facts.
+export function detailFactsInput(t: RawTender): Partial<TenderInput> {
+  return {
+    deadline: toDate(t.bid_closing_date) ?? "",
+    region: nameOf(t.region),
+    publishing_entity: nameOf(t.company),
+    bid_bond: toStr(t.bid_bond),
+    bid_document_price: toStr(t.bid_document_price),
+    published_on: publishedOn(t.sources),
+    published_date: toDate(t.published_at ?? t.created_at),
+    posted_at: toIso(t.created_at ?? t.published_at),
+    featured: Boolean(t.is_featured || t.is_pinned),
+    proforma: Boolean(t.is_proforma),
+    bid_closing_text: toStr(t.bid_closing_date_text),
+    bid_opening_text: toStr(t.bid_opening_date_text),
+    ...factsFromDetail(t),
+  };
+}
+
+// The company/contact + schedule + documents fields carried on a tender's DETAIL
+// page. Exported so the enrichment backfill maps them the same way as the crawl.
+export function factsFromDetail(t: RawTender): Partial<TenderInput> {
+  const c = t.company;
+  return {
+    bid_opening_at: toStr(t.bid_opening_date),
+    bid_closing_at: toStr(t.bid_closing_date),
+    documents: mapDocs(t.documents),
+    company_tin: c ? toStr(c.tin) : null,
+    company_phone: c ? phoneOf(c.phones) : null,
+    company_website: c ? toStr(c.website) : null,
+    company_address: c ? toStr(typeof c.address === "string" ? c.address : null) : null,
+    company_logo: c ? toStr(c.logo) : null,
+  };
+}
+
 // "Published on": the source publication date(s), e.g. "Jul 15, 2026".
 function publishedOn(sources: RawSource[] | null): string | null {
   if (!Array.isArray(sources)) return null;
@@ -284,6 +360,17 @@ export async function scrape2merkato(
         if (t) {
           const cats = expandCategories(t.categories, categoryParents);
           if (cats.length) base.categories = cats;
+          // Region lives ONLY on the detail page (the list JSON omits it), so
+          // fill it here — otherwise every tender would be saved region-less.
+          base.region = nameOf(t.region) ?? base.region;
+          // Bid opening date/time, closing time, documents, buyer profile — all
+          // only on the detail page. factsFromDetail maps them once (shared with
+          // the enrichment backfill).
+          Object.assign(base, factsFromDetail(t));
+          base.featured = Boolean(t.is_featured || t.is_pinned);
+          base.proforma = Boolean(t.is_proforma);
+          base.bid_closing_text = toStr(t.bid_closing_date_text);
+          base.bid_opening_text = toStr(t.bid_opening_date_text);
           base.description =
             formatDescription(t.description) ??
             formatDescription(t.ai_summary) ??

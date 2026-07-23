@@ -87,7 +87,7 @@ type Post = {
   tags: Tag[];
 };
 
-const NON_CATEGORY = new Set(["english", "amharic", "2merkato"]);
+const NON_CATEGORY = new Set(["english", "amharic", "2merkato", "featured", "proforma"]);
 
 function deadlineOf(excerpt: string | null): { deadline: string | null; ts: number } {
   const m = (excerpt || "").match(/Deadline\s+(\d{4}-\d{2}-\d{2})/i);
@@ -96,10 +96,45 @@ function deadlineOf(excerpt: string | null): { deadline: string | null; ts: numb
   return { deadline: m[1], ts: Number.isNaN(ms) ? 0 : Math.floor(ms / 1000) };
 }
 
+// Region lives in the body's facts list ("Region: Addis Ababa"), but the source
+// values are free-text and messy ("Affar Region: Amibara…", "Addis Ababa /
+// Ethiopia"). We extract the facts value, then CANONICALISE to a standard
+// Ethiopian region by keyword so the theme gets a clean, finite dropdown.
+// Order matters: more-specific names first (e.g. "south west" before "south").
+const REGION_CANON: [RegExp, string][] = [
+  [/addis ?ab(a|e)ba/, "Addis Ababa"],
+  [/dire ?dawa/, "Dire Dawa"],
+  [/south ?west ethiopia/, "South West Ethiopia"],
+  [/central ethiopia/, "Central Ethiopia"],
+  [/south ethiopia/, "South Ethiopia"],
+  [/benishangul|benshangul/, "Benishangul-Gumuz"],
+  [/gambell?a/, "Gambela"],
+  [/oromia/, "Oromia"],
+  [/amhara/, "Amhara"],
+  [/tigray/, "Tigray"],
+  [/aff?ar/, "Afar"],
+  [/somali/, "Somali"],
+  [/harari/, "Harari"],
+  [/sidama/, "Sidama"],
+  [/snnp/, "SNNPR"],
+];
+function regionOf(plaintext: string | null): string | null {
+  const txt = plaintext || "";
+  // Only look in the facts block, never the free-text description/prose.
+  const i = txt.indexOf("Tender details");
+  const facts = i >= 0 ? txt.slice(i) : txt;
+  const m = facts.match(/\bRegion:\s*([^\n]+)/i);
+  if (!m) return null;
+  const hay = m[1].toLowerCase();
+  for (const [re, name] of REGION_CANON) if (re.test(hay)) return name;
+  return null; // unrecognised → no region (better than noise)
+}
+
 function toDoc(p: Post, todayStart: number) {
   const entity = p.tags.find((t) => t.slug.startsWith("entity-"));
+  const regionTag = p.tags.find((t) => t.slug.startsWith("region-"));
   const categories = p.tags
-    .filter((t) => !t.slug.startsWith("entity-") && !NON_CATEGORY.has(t.slug))
+    .filter((t) => !t.slug.startsWith("entity-") && !t.slug.startsWith("region-") && !NON_CATEGORY.has(t.slug))
     .map((t) => t.name);
   const { deadline, ts: deadline_ts } = deadlineOf(p.custom_excerpt);
   const pubMs = p.published_at ? Date.parse(p.published_at) : NaN;
@@ -110,6 +145,10 @@ function toDoc(p: Post, todayStart: number) {
     title: p.title,
     publishing_entity: entity ? entity.name : null,
     categories,
+    // Prefer the clean "region-*" tag (from 2merkato's structured region);
+    // fall back to parsing the body for any tender that predates the backfill.
+    region: regionTag ? regionTag.name : regionOf(p.plaintext),
+    featured: p.tags.some((t) => t.slug === "featured"),
     // Index the full description so every word is searchable (generous cap
     // keeps the index sane for the rare multi-page notice).
     description: (p.plaintext || "").replace(/\s+/g, " ").trim().slice(0, 20000),
@@ -133,7 +172,7 @@ async function main() {
     // entity, categories/region/source). Order-based ranking still favours the
     // title because it's the first field on each document.
     searchableAttributes: ["*"],
-    filterableAttributes: ["deadline_ts", "open_rank", "categories", "publishing_entity"],
+    filterableAttributes: ["deadline_ts", "open_rank", "categories", "publishing_entity", "region", "featured"],
     sortableAttributes: ["published_ts", "deadline_ts", "open_rank"],
     // 175 category values > Meili's default facet cap of 100, so the theme's
     // category dropdown can show a count for every sector.
