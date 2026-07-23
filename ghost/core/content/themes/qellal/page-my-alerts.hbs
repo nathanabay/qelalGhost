@@ -48,7 +48,7 @@
     body.hidden = false;
     var list = root.querySelector("[data-alerts-list]"), tg = root.querySelector("[data-tg-status]"),
         digest = root.querySelector("[data-digest]"), pauseStatus = root.querySelector("[data-pause-status]");
-    function api(path, opts) { return fetch("/alerts" + path, Object.assign({ credentials: "same-origin" }, opts || {})); }
+    function api(path, opts) { return fetch("/ghost/alerts" + path, Object.assign({ credentials: "same-origin" }, opts || {})); }
     function load() {
         api("/api/subscriptions").then(function (r) { return r.json(); }).then(function (d) {
             tg.textContent = d.telegram_linked ? "✓ Telegram is linked to this account." : "Not linked yet — tap “Link Telegram” to get alerts in Telegram.";

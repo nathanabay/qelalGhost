@@ -101,7 +101,7 @@ load();
 // sidebar link that opens /alerts/admin/ in an iframe over .gh-main. Mirrors the
 // Scraper panel injector so both coexist.
 export const ADMIN_SIDEBAR_JS = `(function () {
-  var NAV = "gh-alerts-nav", FRAME = "gh-alerts-frame", SRC = "/alerts/admin/", HASH = "#/alerts", shown = false;
+  var NAV = "gh-alerts-nav", FRAME = "gh-alerts-frame", SRC = "/ghost/alerts/admin/", HASH = "#/alerts", shown = false;
   function host() { return document.querySelector(".gh-main") || document.querySelector("main") || document.body; }
   function build() { var h = host(); if (h !== document.body && getComputedStyle(h).position === "static") h.style.position = "relative"; var f = document.createElement("iframe"); f.id = FRAME; f.title = "Alerts"; f.src = SRC; f.style.cssText = "position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;z-index:5000"; h.appendChild(f); return f; }
   function hideSibs(h) { var k = h.children; for (var i = 0; i < k.length; i++) { var c = k[i]; if (c.id !== FRAME && c.style.display !== "none") { c.setAttribute("data-alrhide", "1"); c.style.display = "none"; } } }

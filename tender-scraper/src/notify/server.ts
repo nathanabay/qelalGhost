@@ -167,8 +167,8 @@ async function adminApi(req: http.IncomingMessage, res: http.ServerResponse, cfg
     const out: Record<string, string> = {};
     for (const k of SETTING_KEYS) out[k.key] = k.secret ? (raw[k.key] ? "••••" + raw[k.key].slice(-4) : "") : (raw[k.key] || "");
     return send(res, 200, { settings: out, keys: SETTING_KEYS, webhookUrls: {
-      ghost: `${cfg.siteUrl}/alerts/ghost/webhook/${(await store.getSettings()).ghost_webhook_secret || "<set-secret>"}`,
-      telegram: `${cfg.siteUrl}/alerts/telegram/webhook/${(await store.getSettings()).telegram_webhook_secret || "<set-secret>"}`,
+      ghost: `${cfg.siteUrl}/ghost/alerts/ghost/webhook/${(await store.getSettings()).ghost_webhook_secret || "<set-secret>"}`,
+      telegram: `${cfg.siteUrl}/ghost/alerts/telegram/webhook/${(await store.getSettings()).telegram_webhook_secret || "<set-secret>"}`,
     } });
   }
   if (path === "/admin/api/settings" && req.method === "POST") {
@@ -185,7 +185,7 @@ async function adminApi(req: http.IncomingMessage, res: http.ServerResponse, cfg
     const me = await telegramGetMe(cfg.telegram.token);
     if (!me.ok) return send(res, 200, { ok: false, error: me.error });
     if (me.username && !cfg.telegram.username) await store.setSetting("telegram_bot_username", me.username);
-    const hook = await telegramSetWebhook(cfg.telegram.token, `${cfg.siteUrl}/alerts/telegram/webhook/${cfg.telegram.webhookSecret}`, cfg.telegram.webhookSecret);
+    const hook = await telegramSetWebhook(cfg.telegram.token, `${cfg.siteUrl}/ghost/alerts/telegram/webhook/${cfg.telegram.webhookSecret}`, cfg.telegram.webhookSecret);
     return send(res, 200, { ok: hook.ok, username: me.username, error: hook.error });
   }
   if (path === "/admin/api/test-telegram" && req.method === "POST") {
