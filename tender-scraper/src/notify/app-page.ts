@@ -163,12 +163,14 @@ function renderBrowse(){
       +'<select id="dl" class="full"><option value="">Any deadline</option><option value="7">Closing within 7 days</option><option value="14">Within 14 days</option><option value="30">Within 30 days</option></select>'
       +'<select id="quickSel" class="full"><option value="">Quick view…</option><option value="closing">📅 Closing this week</option><option value="today">⏰ Closing today</option><option value="latest">🆕 Latest tenders</option></select>'
     +'</div>'
-    +'<div id="results"><p class="muted">Type a keyword, pick a filter, or choose a quick view.</p></div>';
+    +'<div id="results"><p class="muted">Loading tenders…</p></div>';
   const run=()=>{ const qk=document.getElementById('quickSel'); if(qk) qk.value=''; doSearch(); };
   document.getElementById('q').addEventListener('input', debounce(run,350));
   ['cat','reg','dl'].forEach(id=>document.getElementById(id).addEventListener('change', run));
   document.getElementById('quickSel').addEventListener('change', e=>{ const v=e.target.value; if(v){ clearFilters(); browse(v); } });
+  // Land with tenders already loaded: restore the last search, or show latest.
   if(STATE.lastSearch.q||STATE.lastSearch.catName||STATE.lastSearch.region||STATE.lastSearch.deadline) doSearch();
+  else browse('latest');
 }
 function clearFilters(){ ['q','cat','reg','dl'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; }); STATE.lastSearch={}; hideMain(); }
 let _t; function debounce(fn,ms){ return (...a)=>{ clearTimeout(_t); _t=setTimeout(()=>fn(...a),ms); }; }
@@ -191,11 +193,12 @@ async function createAlertFromSearch(){
 
 async function browse(mode){
   haptic();
-  let p={}; if(mode==='closing') p={deadline:'7',sort:'open_rank:asc,deadline_ts:asc'};
-  else if(mode==='today') p={deadline:'1',sort:'deadline_ts:asc'};
+  let p={}, title='Latest tenders';
+  if(mode==='closing'){ p={deadline:'7',sort:'open_rank:asc,deadline_ts:asc'}; title='Closing this week'; }
+  else if(mode==='today'){ p={deadline:'1',sort:'deadline_ts:asc'}; title='Closing today'; }
   else p={sort:'published_ts:desc'};
   const res=await api('/api/search?'+qs(p));
-  document.getElementById('results').innerHTML='<p class="sec-h">Results</p>'+listHTML(res.hits,'Nothing here right now.');
+  const el=document.getElementById('results'); if(el) el.innerHTML='<p class="sec-h">'+title+'</p>'+listHTML(res.hits,'Nothing here right now.');
 }
 async function browseCat(name){
   haptic();
