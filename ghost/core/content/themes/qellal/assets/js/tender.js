@@ -1114,6 +1114,24 @@
           save.addEventListener("click", function () { var l = loadSSList(); l.unshift({ label: labelFor(p), params: p }); lsSet(SS_KEY, l.slice(0, 20)); renderSS(); });
           ssBar.appendChild(save);
         }
+        // Email/Telegram alerts for this search — members only.
+        if (window.QELLAL_MEMBER) {
+          var bell = document.createElement("button"); bell.type = "button"; bell.className = "ss-save ss-alert"; bell.textContent = "🔔 Get alerts";
+          bell.addEventListener("click", function () {
+            var crit = currentParams();
+            if (crit.cat && slugToName[crit.cat]) crit.catName = slugToName[crit.cat];
+            bell.disabled = true; bell.textContent = "Saving…";
+            fetch("/alerts/api/subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
+              body: JSON.stringify({ label: labelFor(p), criteria: crit, channels: { email: true, telegram: true } }) })
+              .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+              .then(function () { bell.textContent = "✓ Alert saved — manage on /alerts"; })
+              .catch(function () { bell.disabled = false; bell.textContent = "🔔 Get alerts"; alert("Could not save the alert. Please try again."); });
+          });
+          ssBar.appendChild(bell);
+        } else {
+          var signin = document.createElement("a"); signin.className = "ss-save ss-alert"; signin.href = "#/portal/signin"; signin.setAttribute("data-portal", "signin"); signin.textContent = "🔔 Sign in to get alerts";
+          ssBar.appendChild(signin);
+        }
       }
     }
     function loadSSList() { return lsGet(SS_KEY, []); }

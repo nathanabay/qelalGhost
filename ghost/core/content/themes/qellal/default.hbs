@@ -44,6 +44,7 @@
                     </button>
                     {{#if @site.members_enabled}}
                         {{#if @member}}
+                        <a class="btn btn-secondary btn-sm" href="{{@site.url}}/alerts/">Alerts</a>
                         <a class="btn btn-primary btn-sm" href="#/portal/account" data-portal="account">Account</a>
                         {{else}}
                         <a class="btn btn-primary btn-sm" href="#/portal/signin" data-portal="signin">Sign in</a>
@@ -120,6 +121,7 @@
             key: "{{@custom.meili_search_key}}"
         };
     </script>
+    {{#if @member}}<script>window.QELLAL_MEMBER = { uuid: "{{@member.uuid}}", email: "{{@member.email}}" };</script>{{/if}}
     <script src="{{asset "built/categories.js"}}"></script>
     <script src="{{asset "js/tender.js"}}"></script>
     {{ghost_foot}}

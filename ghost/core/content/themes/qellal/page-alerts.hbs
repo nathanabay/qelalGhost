@@ -1,0 +1,78 @@
+{{!< default}}
+
+{{!-- "My alerts" — Ghost serves this for the page with slug "alerts". All data
+      comes from the notifier service (/alerts/api/*) authenticated by the
+      member's own cookie; the page just needs the member to be signed in. --}}
+
+<section class="tender-list alerts-page" data-alerts-page>
+    <div class="tender-list-head">
+        <div>
+            <h2>My alerts</h2>
+            <p style="margin:.25rem 0 0;font-size:.875rem;color:var(--muted)">Get new matching tenders and deadline reminders by Telegram &amp; email.</p>
+        </div>
+        <a class="link-more" href="/tenders/">All tenders</a>
+    </div>
+
+    <div data-alerts-signedout hidden>
+        <div class="card"><p>Please <a href="#/portal/signin" data-portal="signin">sign in</a> to create and manage your tender alerts.</p></div>
+    </div>
+
+    <div data-alerts-body hidden>
+        <div class="card">
+            <h3 style="margin:0 0 .6rem">Telegram</h3>
+            <p data-tg-status style="margin:0 0 .8rem;color:var(--muted)">…</p>
+            <button class="btn btn-primary btn-sm" data-tg-link type="button">Link Telegram</button>
+        </div>
+        <div class="card">
+            <h3 style="margin:0 0 .6rem">Delivery</h3>
+            <label class="toolbar-check"><input type="checkbox" data-digest> Daily digest (one message per day instead of instant)</label>
+            <div style="margin-top:.7rem;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" data-pause type="button">Pause 7 days</button>
+                <button class="btn btn-secondary btn-sm" data-resume type="button">Resume</button>
+                <span data-pause-status style="color:var(--muted);font-size:.85rem"></span>
+            </div>
+        </div>
+        <div class="card">
+            <h3 style="margin:0 0 .6rem">Your alerts</h3>
+            <ul class="alerts-list" data-alerts-list></ul>
+            <p style="margin:.8rem 0 0;color:var(--muted);font-size:.82rem">Create alerts from the <a href="/tenders/">Tenders</a> page: filter/search, then tap “🔔 Get alerts”.</p>
+        </div>
+    </div>
+</section>
+
+<script>
+(function () {
+    var root = document.querySelector("[data-alerts-page]"); if (!root) return;
+    var signedout = root.querySelector("[data-alerts-signedout]"), body = root.querySelector("[data-alerts-body]");
+    if (!window.QELLAL_MEMBER) { signedout.hidden = false; return; }
+    body.hidden = false;
+    var list = root.querySelector("[data-alerts-list]"), tg = root.querySelector("[data-tg-status]"),
+        digest = root.querySelector("[data-digest]"), pauseStatus = root.querySelector("[data-pause-status]");
+    function api(path, opts) { return fetch("/alerts" + path, Object.assign({ credentials: "same-origin" }, opts || {})); }
+    function load() {
+        api("/api/subscriptions").then(function (r) { return r.json(); }).then(function (d) {
+            tg.textContent = d.telegram_linked ? "✓ Telegram is linked to this account." : "Not linked yet — tap “Link Telegram” to get alerts in Telegram.";
+            digest.checked = !!d.digest_mode;
+            pauseStatus.textContent = d.paused_until ? ("Paused until " + new Date(d.paused_until).toLocaleDateString()) : "Active.";
+            list.innerHTML = "";
+            (d.alerts || []).forEach(function (a) {
+                var li = document.createElement("li");
+                var lab = document.createElement("span"); lab.className = "alerts-label"; lab.textContent = a.label;
+                var ch = document.createElement("span"); ch.className = "alerts-ch";
+                ch.textContent = [a.channels && a.channels.telegram ? "Telegram" : null, a.channels && a.channels.email ? "Email" : null].filter(Boolean).join(" · ");
+                var del = document.createElement("button"); del.type = "button"; del.className = "btn btn-secondary btn-sm"; del.textContent = "Delete";
+                del.onclick = function () { api("/api/subscriptions?id=" + a.id, { method: "DELETE" }).then(load); };
+                li.appendChild(lab); li.appendChild(ch); li.appendChild(del); list.appendChild(li);
+            });
+            if (!(d.alerts || []).length) list.innerHTML = '<li style="color:var(--muted)">No alerts yet.</li>';
+        }).catch(function () { tg.textContent = "Could not load your alerts."; });
+    }
+    root.querySelector("[data-tg-link]").onclick = function () {
+        api("/api/telegram/link", { method: "POST" }).then(function (r) { return r.json(); }).then(function (d) { if (d.url) window.open(d.url, "_blank"); });
+    };
+    digest.onchange = function () { api("/api/prefs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ digest_mode: digest.checked }) }); };
+    root.querySelector("[data-pause]").onclick = function () { api("/api/prefs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pause_days: 7 }) }).then(load); };
+    root.querySelector("[data-resume]").onclick = function () { api("/api/prefs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pause_days: 0 }) }).then(load); };
+    load();
+})();
+</script>

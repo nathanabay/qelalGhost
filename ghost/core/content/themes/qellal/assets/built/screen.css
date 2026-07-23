@@ -292,8 +292,15 @@ button, [role="button"], a, label, select, summary { -webkit-tap-highlight-color
 .ss-apply:hover { color: var(--primary); }
 .ss-remove { border: 0; background: transparent; color: var(--muted); font-size: 1rem; line-height: 1; padding: .3rem .55rem .3rem .35rem; cursor: pointer; }
 .ss-remove:hover { color: var(--signal); }
-.ss-save { border: 1px dashed var(--border); border-radius: 999px; background: transparent; font: inherit; font-size: .8rem; font-weight: 600; color: var(--primary); padding: .3rem .8rem; cursor: pointer; }
+.ss-save { border: 1px dashed var(--border); border-radius: 999px; background: transparent; font: inherit; font-size: .8rem; font-weight: 600; color: var(--primary); padding: .3rem .8rem; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
 .ss-save:hover { background: var(--primary-soft); }
+.ss-alert { border-style: solid; border-color: var(--primary); }
+.ss-alert:disabled { opacity: .7; cursor: default; }
+.alerts-page .card { margin-bottom: 1rem; }
+.alerts-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
+.alerts-list li { display: flex; align-items: center; gap: .75rem; padding: .55rem .8rem; border: 1px solid var(--border); border-radius: 8px; }
+.alerts-label { font-weight: 600; flex: 1; }
+.alerts-ch { color: var(--muted); font-size: .8rem; white-space: nowrap; }
 .search-page-more { margin: 1.5rem 0; text-align: center; }
 .search-page .tender-card mark, .search-hit mark { background: var(--primary-soft); color: var(--primary); border-radius: 3px; padding: 0 .12em; font-weight: 600; }
 
