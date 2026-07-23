@@ -190,7 +190,7 @@ async function createAlertFromSearch(){
 
 // ── browse ──
 function renderBrowse(){
-  const cats=(STATE.init&&STATE.init.categories||[]).slice(0,24);
+  const cats=(STATE.init&&STATE.init.categories||[]);
   view.innerHTML =
     '<div class="grid2">'
       +'<button class="btn sec" onclick="browse(\\'closing\\')">📅 Closing this week</button>'
@@ -198,9 +198,9 @@ function renderBrowse(){
       +'<button class="btn sec" onclick="browse(\\'latest\\')" style="grid-column:1/3">🆕 Latest tenders</button>'
     +'</div>'
     +'<p class="sec-h">By sector</p>'
-    +'<div id="chips">'+cats.map(c=>'<button class="chip" data-cat="'+esc(c.value)+'">'+esc(c.value)+' ('+c.count+')</button>').join('')+'</div>'
+    +'<select id="secSel"><option value="">Choose a sector…</option>'+cats.map(c=>'<option value="'+esc(c.value)+'">'+esc(c.value)+' ('+c.count+')</option>').join('')+'</select>'
     +'<div id="results"></div>';
-  document.getElementById('chips').addEventListener('click', e=>{ const b=e.target.closest('.chip'); if(b) browseCat(b.dataset.cat); });
+  document.getElementById('secSel').addEventListener('change', e=>{ const v=e.target.value; if(v) browseCat(v); });
 }
 async function browse(mode){
   haptic();
