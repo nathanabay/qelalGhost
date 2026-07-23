@@ -41,6 +41,13 @@ table{width:100%;border-collapse:collapse;font-size:.85rem}td{padding:.35rem 0;b
     <span id="msg" class="pill"></span>
   </div>
 </div>
+<div class="card"><h2>Broadcast</h2>
+  <p class="hint">Send a one-off message to every Telegram-linked subscriber (HTML allowed).</p>
+  <textarea id="bc" rows="3" style="width:100%;font:inherit;border:1px solid var(--border);border-radius:5px;padding:.5rem"></textarea>
+  <div class="row"><button type="button" id="bcSend" class="primary">Send broadcast</button><span id="bcMsg" class="pill"></span></div>
+</div>
+<div class="card"><h2>Bot usage</h2><div id="events" class="hint">…</div></div>
+<div class="card"><h2>Feedback</h2><div id="feedback" class="hint">…</div></div>
 </div>
 <script>
 var GROUPS=[["Telegram",["telegram_bot_token","telegram_bot_username","telegram_webhook_secret","channel_telegram_enabled"]],
@@ -85,15 +92,19 @@ async function insights(){
    '<span class="stat"><b>'+i.subscribers+'</b><br>subscribers</span>'+
    '<span class="stat"><b>'+i.telegramLinked+'</b><br>telegram linked</span>'+
    '<span class="stat"><b>'+i.alerts+'</b><br>alerts</span>'+
+   '<span class="stat"><b>'+(i.savedTenders||0)+'</b><br>saved</span>'+
    '<span class="stat"><b>'+i.sendsToday+'</b><br>sends today</span>'+
    '<span class="stat"><b>'+i.sends7d+'</b><br>sends (7d)</span>';
+  document.getElementById("events").innerHTML=(i.events||[]).map(function(e){return h(e.name)+': <b>'+e.count+'</b>'}).join(' · ')||'No bot activity yet.';
   }catch(e){}
 }
+async function loadFeedback(){try{var d=await (await fetch("api/feedback")).json();document.getElementById("feedback").innerHTML=(d.feedback||[]).map(function(f){return '<div style="border-bottom:1px solid var(--soft);padding:.3rem 0">'+h(f.text)+' <span style="color:var(--muted)">· '+h(f.created_at)+'</span></div>'}).join('')||'No feedback yet.';}catch(e){}}
 function msg(t,ok){var m=document.getElementById("msg");m.textContent=t;m.className="pill"+(ok?" ok":"")}
 document.getElementById("tgReg").onclick=async function(){msg("registering…");var r=await (await fetch("api/telegram/register",{method:"POST"})).json();msg(r.ok?("webhook set ("+(r.username||"")+")"):("error: "+(r.error||"")),r.ok)};
 document.getElementById("tgTest").onclick=async function(){var c=prompt("Telegram chat id to test:");if(!c)return;msg("sending…");var r=await (await fetch("api/test-telegram",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chat_id:c})})).json();msg(r.ok?"sent":("error: "+(r.error||"")),r.ok)};
 document.getElementById("emTest").onclick=async function(){var to=prompt("Email address to test:");if(!to)return;msg("sending…");var r=await (await fetch("api/test-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to:to})})).json();msg(r.ok?"sent":("error: "+(r.error||"")),r.ok)};
-load();
+document.getElementById("bcSend").onclick=async function(){var t=document.getElementById("bc").value.trim();if(!t)return;var m=document.getElementById("bcMsg");m.textContent="sending…";var r=await (await fetch("api/broadcast",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})})).json();m.textContent=r.ok?("sent "+r.sent+"/"+r.total):("error: "+(r.error||""));m.className="pill ok"};
+load();loadFeedback();
 </script></body></html>`;
 }
 

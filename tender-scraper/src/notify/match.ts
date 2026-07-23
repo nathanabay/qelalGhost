@@ -132,3 +132,30 @@ export async function queryMeili(
     return [];
   }
 }
+
+// Top facet values (for category/region browse + trending).
+export async function facet(cfg: Config, field: string, limit = 24): Promise<{ value: string; count: number }[]> {
+  if (!cfg.meiliHost || !cfg.meiliKey) return [];
+  try {
+    const r = await fetch(`${cfg.meiliHost}/indexes/${cfg.meiliIndex}/search`, {
+      method: "POST", headers: { Authorization: `Bearer ${cfg.meiliKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: "", limit: 0, facets: [field] }),
+    });
+    const d = (await r.json()) as { facetDistribution?: Record<string, Record<string, number>> };
+    const dist = d.facetDistribution?.[field] || {};
+    return Object.entries(dist).map(([value, count]) => ({ value, count: Number(count) })).sort((a, b) => b.count - a.count).slice(0, limit);
+  } catch { return []; }
+}
+
+// One tender by its id (slug). Requires `id` to be filterable on the index.
+export async function getById(cfg: Config, id: string): Promise<(MeiliHit & { categories?: string[] }) | null> {
+  if (!cfg.meiliHost || !cfg.meiliKey) return null;
+  try {
+    const r = await fetch(`${cfg.meiliHost}/indexes/${cfg.meiliIndex}/search`, {
+      method: "POST", headers: { Authorization: `Bearer ${cfg.meiliKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: "", filter: `id = "${id.replace(/"/g, '\\"')}"`, limit: 1, attributesToRetrieve: ["id", "url", "title", "deadline", "deadline_ts", "publishing_entity", "region", "categories"] }),
+    });
+    const d = (await r.json()) as { hits?: (MeiliHit & { categories?: string[] })[] };
+    return d.hits?.[0] || null;
+  } catch { return null; }
+}

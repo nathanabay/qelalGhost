@@ -14,10 +14,13 @@ export type Subscriber = {
   telegram_link_token: string | null;
   digest_mode: number;
   paused_until: string | null;
+  lang?: string;
+  digest_freq?: string;
 };
+export type SavedTender = { tender_id: string; url: string | null; title: string | null; deadline: string | null };
 export type Criteria = { q?: string; cat?: string; catName?: string; region?: string; deadline?: string; closed?: string };
 export type Channels = { email?: boolean; telegram?: boolean };
-export type Alert = { id: number; member_uuid: string; label: string; criteria: Criteria; channels: Channels; created_at: string };
+export type Alert = { id: number; member_uuid: string; label: string; criteria: Criteria; channels: Channels; created_at: string; snoozed_until?: string | null };
 
 let db: Database.Database | null = null;
 
@@ -53,7 +56,23 @@ export async function initStore(): Promise<void> {
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY, value TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS saved_tenders (
+      member_uuid TEXT NOT NULL, tender_id TEXT NOT NULL, url TEXT, title TEXT, deadline TEXT,
+      saved_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (member_uuid, tender_id)
+    );
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, member_uuid TEXT, chat_id TEXT, text TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS bot_events (name TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0);
   `);
+  // Additive columns for pre-existing installs (ignore "duplicate column").
+  for (const sql of [
+    "ALTER TABLE subscribers ADD COLUMN lang TEXT DEFAULT 'en'",
+    "ALTER TABLE subscribers ADD COLUMN digest_freq TEXT DEFAULT 'daily'",
+    "ALTER TABLE alerts ADD COLUMN snoozed_until TEXT",
+  ]) { try { db!.exec(sql); } catch { /* already exists */ } }
 }
 function d(): Database.Database {
   if (!db) throw new Error("store not initialised — call initStore() first");
@@ -100,9 +119,9 @@ export async function setPrefs(uuid: string, prefs: { digest_mode?: boolean; pau
 }
 
 // ── alerts ───────────────────────────────────────────────────────────────────
-type AlertRow = { id: number; member_uuid: string; label: string; criteria_json: string; channels_json: string; created_at: string };
+type AlertRow = { id: number; member_uuid: string; label: string; criteria_json: string; channels_json: string; created_at: string; snoozed_until?: string | null };
 function toAlert(r: AlertRow): Alert {
-  return { id: r.id, member_uuid: r.member_uuid, label: r.label, criteria: JSON.parse(r.criteria_json || "{}"), channels: JSON.parse(r.channels_json || "{}"), created_at: r.created_at };
+  return { id: r.id, member_uuid: r.member_uuid, label: r.label, criteria: JSON.parse(r.criteria_json || "{}"), channels: JSON.parse(r.channels_json || "{}"), created_at: r.created_at, snoozed_until: r.snoozed_until ?? null };
 }
 export async function listAlerts(uuid: string): Promise<Alert[]> {
   return (d().prepare("SELECT * FROM alerts WHERE member_uuid = ? ORDER BY created_at DESC").all(uuid) as AlertRow[]).map(toAlert);
@@ -141,6 +160,57 @@ export async function sentCountToday(uuid: string): Promise<number> {
   return Number(r?.c || 0);
 }
 
+// ── personalization ──────────────────────────────────────────────────────────
+export async function setLang(uuid: string, lang: string): Promise<void> {
+  d().prepare("UPDATE subscribers SET lang = ? WHERE member_uuid = ?").run(lang, uuid);
+}
+export async function setDigestFreq(uuid: string, freq: string): Promise<void> {
+  d().prepare("UPDATE subscribers SET digest_freq = ? WHERE member_uuid = ?").run(freq, uuid);
+}
+export async function setAlertChannels(uuid: string, id: number, channels: Channels): Promise<void> {
+  d().prepare("UPDATE alerts SET channels_json = ? WHERE id = ? AND member_uuid = ?").run(JSON.stringify(channels), id, uuid);
+}
+export async function snoozeAlert(uuid: string, id: number, until: Date | null): Promise<void> {
+  d().prepare("UPDATE alerts SET snoozed_until = ? WHERE id = ? AND member_uuid = ?").run(until ? until.toISOString() : null, id, uuid);
+}
+
+// ── saved tenders (bookmarks + saved-tender reminders) ───────────────────────
+export async function saveTender(uuid: string, t: { tender_id: string; url?: string; title?: string; deadline?: string | null }): Promise<void> {
+  d().prepare("INSERT OR IGNORE INTO saved_tenders (member_uuid, tender_id, url, title, deadline) VALUES (?, ?, ?, ?, ?)").run(uuid, t.tender_id, t.url || null, t.title || null, t.deadline || null);
+}
+export async function unsaveTender(uuid: string, tenderId: string): Promise<void> {
+  d().prepare("DELETE FROM saved_tenders WHERE member_uuid = ? AND tender_id = ?").run(uuid, tenderId);
+}
+export async function isSaved(uuid: string, tenderId: string): Promise<boolean> {
+  return !!d().prepare("SELECT 1 FROM saved_tenders WHERE member_uuid = ? AND tender_id = ?").get(uuid, tenderId);
+}
+export async function listSaved(uuid: string): Promise<SavedTender[]> {
+  return d().prepare("SELECT tender_id, url, title, deadline FROM saved_tenders WHERE member_uuid = ? ORDER BY saved_at DESC LIMIT 25").all(uuid) as SavedTender[];
+}
+export async function allSavedWithSubscriber(): Promise<(SavedTender & { subscriber: Subscriber })[]> {
+  const rows = d().prepare("SELECT st.*, s.* FROM saved_tenders st JOIN subscribers s ON s.member_uuid = st.member_uuid").all() as (SavedTender & Subscriber)[];
+  return rows.map((r) => ({ tender_id: r.tender_id, url: r.url, title: r.title, deadline: r.deadline, subscriber: r as unknown as Subscriber }));
+}
+
+// ── feedback ─────────────────────────────────────────────────────────────────
+export async function addFeedback(uuid: string | null, chat: string | null, text: string): Promise<void> {
+  d().prepare("INSERT INTO feedback (member_uuid, chat_id, text) VALUES (?, ?, ?)").run(uuid, chat, text.slice(0, 1000));
+}
+export async function listFeedback(): Promise<{ id: number; text: string; created_at: string }[]> {
+  return d().prepare("SELECT id, text, created_at FROM feedback ORDER BY id DESC LIMIT 30").all() as { id: number; text: string; created_at: string }[];
+}
+
+// ── bot usage counters + broadcast ───────────────────────────────────────────
+export async function bumpEvent(name: string): Promise<void> {
+  d().prepare("INSERT INTO bot_events (name, count) VALUES (?, 1) ON CONFLICT(name) DO UPDATE SET count = count + 1").run(name);
+}
+export async function getEvents(): Promise<{ name: string; count: number }[]> {
+  return d().prepare("SELECT name, count FROM bot_events ORDER BY count DESC LIMIT 20").all() as { name: string; count: number }[];
+}
+export async function allChatIds(): Promise<string[]> {
+  return (d().prepare("SELECT telegram_chat_id c FROM subscribers WHERE telegram_chat_id IS NOT NULL").all() as { c: string }[]).map((r) => r.c);
+}
+
 // ── insights (admin page) ────────────────────────────────────────────────────
 export async function insights(): Promise<Record<string, unknown>> {
   const g = <T>(sql: string, ...p: unknown[]) => d().prepare(sql).get(...(p as [])) as T;
@@ -154,6 +224,9 @@ export async function insights(): Promise<Record<string, unknown>> {
     sendsToday: Number(g<{ c: number }>("SELECT COUNT(*) c FROM sent_log WHERE date(sent_at) = date('now')")?.c || 0),
     topCategories: a<{ k: string; c: number }>("SELECT json_extract(criteria_json,'$.catName') k, COUNT(*) c FROM alerts WHERE k IS NOT NULL GROUP BY k ORDER BY c DESC LIMIT 8").map((r) => ({ key: r.k, count: Number(r.c) })),
     topRegions: a<{ k: string; c: number }>("SELECT json_extract(criteria_json,'$.region') k, COUNT(*) c FROM alerts WHERE k IS NOT NULL GROUP BY k ORDER BY c DESC LIMIT 8").map((r) => ({ key: r.k, count: Number(r.c) })),
+    savedTenders: Number(g<{ c: number }>("SELECT COUNT(*) c FROM saved_tenders")?.c || 0),
+    feedbackCount: Number(g<{ c: number }>("SELECT COUNT(*) c FROM feedback")?.c || 0),
+    events: a<{ name: string; count: number }>("SELECT name, count FROM bot_events ORDER BY count DESC LIMIT 15").map((r) => ({ name: r.name, count: Number(r.count) })),
     recent: a("SELECT member_uuid, tender_id, kind, channel, sent_at FROM sent_log ORDER BY sent_at DESC LIMIT 20"),
   };
 }

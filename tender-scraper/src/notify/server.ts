@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import { loadConfig, SETTING_KEYS } from "./config";
 import * as store from "./store";
 import { memberFromCookie, staffFromCookie } from "./auth";
-import { factsFromPost, matches } from "./match";
+import { factsFromPost, matches, getById } from "./match";
 import { formatNew } from "./format";
 import { deliver } from "./senders";
 import { sendTelegram, telegramGetMe, telegramSetWebhook, setBotCommands } from "./senders/telegram";
@@ -33,6 +33,16 @@ function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
   });
 }
 
+function buildIcs(title: string, deadline: string, url: string): string {
+  const d = deadline.replace(/-/g, "");
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const esc = (s: string) => s.replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
+  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Qellal//Tender//EN", "BEGIN:VEVENT",
+    `UID:${d}-${Math.random().toString(36).slice(2)}@qelal.et`, `DTSTAMP:${stamp}`,
+    `DTSTART;VALUE=DATE:${d}`, `SUMMARY:${esc("Tender deadline — " + title.slice(0, 120))}`,
+    `DESCRIPTION:${esc(url)}`, `URL:${url}`, "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", "http://localhost");
@@ -43,6 +53,14 @@ const server = http.createServer(async (req, res) => {
     if (path === "/admin/sidebar.js") {
       res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store" });
       return res.end(ADMIN_SIDEBAR_JS);
+    }
+
+    // ── public: .ics for a tender's deadline (the bot's "Add to calendar") ──
+    if (path.startsWith("/ics/")) {
+      const h = await getById(cfg, decodeURIComponent(path.slice(5)));
+      if (!h || !h.deadline) return send(res, 404, "no calendar for this tender", "text/plain");
+      res.writeHead(200, { "Content-Type": "text/calendar; charset=utf-8", "Content-Disposition": 'attachment; filename="tender.ics"', "Cache-Control": "no-store" });
+      return res.end(buildIcs(h.title, h.deadline, h.url));
     }
 
     // ── Telegram webhook ──
@@ -134,6 +152,7 @@ async function handleGhostPublished(cfg: Awaited<ReturnType<typeof loadConfig>>,
   for (const a of rows) {
     if (a.subscriber.digest_mode) continue; // digest members get it in the daily digest
     if (a.subscriber.paused_until && new Date(a.subscriber.paused_until).getTime() > Date.now()) continue;
+    if (a.snoozed_until && new Date(a.snoozed_until).getTime() > Date.now()) continue;
     if (!matches(facts, a.criteria, cfg.policy.includeClosed)) continue;
     await deliver(cfg, a.subscriber, a.channels, msg, { kind: "new", tenderId: facts.id });
   }
@@ -185,6 +204,18 @@ async function adminApi(req: http.IncomingMessage, res: http.ServerResponse, cfg
   }
   if (path === "/admin/api/insights" && req.method === "GET") {
     return send(res, 200, await store.insights());
+  }
+  if (path === "/admin/api/feedback" && req.method === "GET") {
+    return send(res, 200, { feedback: await store.listFeedback() });
+  }
+  if (path === "/admin/api/broadcast" && req.method === "POST") {
+    const b = await readJson(req);
+    const text = String(b.text || "").trim().slice(0, 3000);
+    if (!text) return send(res, 200, { ok: false, error: "empty message" });
+    const chats = await store.allChatIds();
+    let ok = 0;
+    for (const c of chats) { try { await sendTelegram(cfg, c, text); ok++; } catch { /* skip */ } }
+    return send(res, 200, { ok: true, sent: ok, total: chats.length });
   }
   send(res, 404, { error: "not found" });
 }
