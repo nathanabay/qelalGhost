@@ -13,7 +13,7 @@ function metaLine(it: Item): string {
   if (it.region) parts.push(it.region);
   return parts.join(" · ");
 }
-const foot = (siteUrl: string) => `Manage your alerts: ${siteUrl}/alerts/`;
+const foot = (siteUrl: string) => `Manage your alerts: ${siteUrl}/my-alerts/`;
 
 // A single new-tender alert.
 export function formatNew(it: Item, siteUrl: string): Msg {
@@ -22,7 +22,7 @@ export function formatNew(it: Item, siteUrl: string): Msg {
   const telegramHtml =
     `🔔 <b>New tender</b>\n<a href="${esc(it.url)}">${esc(it.title)}</a>` +
     (meta ? `\n${esc(meta)}` : "") +
-    `\n\n<a href="${esc(siteUrl)}/alerts/">Manage alerts</a>`;
+    `\n\n<a href="${esc(siteUrl)}/my-alerts/">Manage alerts</a>`;
   const html =
     `<h2>New tender matching your alert</h2>` +
     `<p><a href="${esc(it.url)}">${esc(it.title)}</a></p>` +
@@ -40,7 +40,7 @@ export function formatReminder(it: Item, daysLeft: number, siteUrl: string): Msg
   const telegramHtml =
     `⏰ <b>Tender ${esc(when)}</b>\n<a href="${esc(it.url)}">${esc(it.title)}</a>` +
     (meta ? `\n${esc(meta)}` : "") +
-    `\n\n<a href="${esc(siteUrl)}/alerts/">Manage alerts</a>`;
+    `\n\n<a href="${esc(siteUrl)}/my-alerts/">Manage alerts</a>`;
   const html =
     `<h2>A tender you follow ${esc(when)}</h2>` +
     `<p><a href="${esc(it.url)}">${esc(it.title)}</a></p>` +
@@ -61,7 +61,7 @@ export function formatDigest(items: Item[], siteUrl: string): Msg {
       text: `• ${it.title}\n  ${it.url}\n  ${meta}` };
   };
   const parts = items.map(li);
-  const telegramHtml = `📬 <b>${n} new tender${n === 1 ? "" : "s"} for you</b>\n\n` + parts.map((p) => p.tg).join("\n\n") + `\n\n<a href="${esc(siteUrl)}/alerts/">Manage alerts</a>`;
+  const telegramHtml = `📬 <b>${n} new tender${n === 1 ? "" : "s"} for you</b>\n\n` + parts.map((p) => p.tg).join("\n\n") + `\n\n<a href="${esc(siteUrl)}/my-alerts/">Manage alerts</a>`;
   const html = `<h2>${n} new tender${n === 1 ? "" : "s"} matching your alerts</h2><ul>` + parts.map((p) => p.html).join("") + `</ul><p style="color:#888;font-size:12px">${esc(foot(siteUrl))}</p>`;
   const text = `${n} new tenders matching your alerts:\n\n` + parts.map((p) => p.text).join("\n\n") + `\n\n${foot(siteUrl)}`;
   return { subject, html, text, telegramHtml };

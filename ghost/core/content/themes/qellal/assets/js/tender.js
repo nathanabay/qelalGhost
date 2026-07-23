@@ -1124,7 +1124,7 @@
             fetch("/alerts/api/subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
               body: JSON.stringify({ label: labelFor(p), criteria: crit, channels: { email: true, telegram: true } }) })
               .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-              .then(function () { bell.textContent = "✓ Alert saved — manage on /alerts"; })
+              .then(function () { bell.textContent = "✓ Alert saved — manage on /my-alerts"; })
               .catch(function () { bell.disabled = false; bell.textContent = "🔔 Get alerts"; alert("Could not save the alert. Please try again."); });
           });
           ssBar.appendChild(bell);
