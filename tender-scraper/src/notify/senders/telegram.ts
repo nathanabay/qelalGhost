@@ -45,7 +45,7 @@ export async function telegramSetWebhook(token: string, url: string, secretToken
     const r = await fetch(api(token, "setWebhook"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, secret_token: secretToken, allowed_updates: ["message"] }),
+      body: JSON.stringify({ url, secret_token: secretToken, allowed_updates: ["message", "edited_message", "callback_query", "inline_query"] }),
     });
     const b = (await r.json()) as { ok: boolean; description?: string };
     return b.ok ? { ok: true } : { ok: false, error: b.description };
