@@ -20,6 +20,11 @@ import { handleUpdate, BOT_COMMANDS } from "./bot";
 
 const PORT = Number(process.env.NOTIFY_PORT || 3839);
 
+// A stray rejection (e.g. sendTelegram to a user who blocked the bot) must never
+// take the whole service down — log and carry on.
+process.on("unhandledRejection", (e) => console.error("[notify] unhandledRejection:", (e as Error)?.message || e));
+process.on("uncaughtException", (e) => console.error("[notify] uncaughtException:", e?.message || e));
+
 function send(res: http.ServerResponse, code: number, body: unknown, type = "application/json") {
   res.writeHead(code, { "Content-Type": type, "Cache-Control": "no-store" });
   res.end(typeof body === "string" ? body : JSON.stringify(body));

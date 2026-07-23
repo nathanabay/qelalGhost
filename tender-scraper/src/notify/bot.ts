@@ -12,8 +12,10 @@ import { sendTelegram, answerCallback, type InlineKeyboard } from "./senders/tel
 
 const PAGE = 5;
 const esc = (s: string) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const q40 = (s: string) => s.replace(/[^\x20-\x7E]/g, "").slice(0, 40);
 const c55 = (s: string) => s.slice(0, 55); // category/region names (ASCII) fit the 64-byte callback
+// Last search per chat — so "More"/"Alert me" work for ANY query (incl. Amharic
+// or queries with ":"), which can't be safely round-tripped through callback_data.
+const lastQ = new Map<string, string>();
 function slugify(s: string): string {
   return s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
@@ -87,8 +89,8 @@ function renderList(l: L, title: string, hits: MeiliHit[], opts: { q?: string; o
   rows.push(hits.map((h, i) => ({ text: `${offset + i + 1}`, callback_data: `t:${h.id}` })));
   if (opts.alertCb) rows.push([{ text: "🔔 Alert me for this", callback_data: opts.alertCb }]);
   const nav: { text: string; callback_data: string }[] = [];
-  if (offset > 0 && opts.q != null) nav.push({ text: "‹ Prev", callback_data: `more:${q40(opts.q)}:${Math.max(0, offset - PAGE)}` });
-  if (hits.length === PAGE && opts.q != null) nav.push({ text: "More ›", callback_data: `more:${q40(opts.q)}:${offset + PAGE}` });
+  if (offset > 0 && opts.q != null) nav.push({ text: "‹ Prev", callback_data: `more:${Math.max(0, offset - PAGE)}` });
+  if (hits.length === PAGE && opts.q != null) nav.push({ text: "More ›", callback_data: `more:${offset + PAGE}` });
   if (nav.length) rows.push(nav);
   rows.push([{ text: tr(l, "back"), callback_data: "menu" }]);
   return { text: `${title}\n\n${lines.join("\n\n")}`, keyboard: { inline_keyboard: rows } };
@@ -110,8 +112,9 @@ async function tenderCard(cfg: Config, chat: string, l: L, id: string) {
 }
 
 async function search(cfg: Config, chat: string, l: L, q: string, offset = 0) {
+  lastQ.set(chat, q);
   const hits = await queryMeili(cfg, { q }, { limit: PAGE, offset });
-  const r = renderList(l, `🔍 Results for "<b>${esc(q)}</b>"`, hits, { q, offset, alertCb: `alert:${q40(q)}` });
+  const r = renderList(l, `🔍 Results for "<b>${esc(q)}</b>"`, hits, { q, offset, alertCb: "alertq" });
   await sendTelegram(cfg, chat, r.text, r.keyboard);
 }
 async function browse(cfg: Config, chat: string, l: L, mode: "latest" | "closing" | "today") {
@@ -272,14 +275,14 @@ async function handleCallback(cfg: Config, cq: { id: string; data?: string; mess
   if (data === "freq") return void cycleFreq(cfg, chat);
   if (data === "lang") return void toggleLang(cfg, chat);
   if (data === "unlink") { await store.unlinkTelegramByChat(chat); return void sendTelegram(cfg, chat, "🔕 Unlinked."); }
-  if (data.startsWith("more:")) { const [, q, off] = data.split(":"); return void search(cfg, chat, l, q, Number(off) || 0); }
+  if (data.startsWith("more:")) { const off = Number(data.slice(5)) || 0; const q = lastQ.get(chat); return void (q ? search(cfg, chat, l, q, off) : sendTelegram(cfg, chat, "🔍 Please send your search again.")); }
+  if (data === "alertq") { const q = lastQ.get(chat); return void (q ? createAlert(cfg, chat, l, `"${q}"`, { q }) : sendTelegram(cfg, chat, "🔍 Search again, then tap “Alert me”.")); }
   if (data.startsWith("t:")) return void tenderCard(cfg, chat, l, data.slice(2));
   if (data.startsWith("sim:")) return void similar(cfg, chat, l, data.slice(4));
   if (data.startsWith("cat:")) return void browseCategory(cfg, chat, l, data.slice(4));
   if (data.startsWith("reg:")) return void browseRegion(cfg, chat, l, data.slice(4));
   if (data.startsWith("acat:")) { const n = data.slice(5); return void createAlert(cfg, chat, l, n, { cat: slugify(n), catName: n }); }
   if (data.startsWith("areg:")) { const n = data.slice(5); return void createAlert(cfg, chat, l, n, { region: n }); }
-  if (data.startsWith("alert:")) { const q = data.slice(6); return void createAlert(cfg, chat, l, `"${q}"`, { q }); }
   if (data.startsWith("save:")) { if (!sub) return void sendTelegram(cfg, chat, "Link this chat first to bookmark."); const h = await getById(cfg, data.slice(5)); if (h) await store.saveTender(sub.member_uuid, { tender_id: h.id, url: h.url, title: h.title, deadline: h.deadline }); return void tenderCard(cfg, chat, l, data.slice(5)); }
   if (data.startsWith("unsave:")) { if (sub) await store.unsaveTender(sub.member_uuid, data.slice(7)); return void tenderCard(cfg, chat, l, data.slice(7)); }
   if (data.startsWith("a:")) return void alertDetail(cfg, chat, l, Number(data.slice(2)));

@@ -30,6 +30,7 @@ export async function initStore(): Promise<void> {
   try { mkdirSync(dirname(path), { recursive: true }); } catch { /* exists */ }
   db = new Database(path);
   db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000"); // server + daily job share the file — wait, don't throw
   db.exec(`
     CREATE TABLE IF NOT EXISTS subscribers (
       member_uuid TEXT PRIMARY KEY,
